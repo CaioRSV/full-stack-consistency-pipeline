@@ -1,0 +1,20 @@
+{
+  "name": "full-stack-consistency-pipeline",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel dev",
+    "build": "pnpm --filter \"*\" build",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "typecheck": "pnpm --filter \"*\" typecheck",
+    "validate": "ts-node scripts/validate.ts"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^5.0.2",
+    "@graphql-codegen/client-preset": "^4.2.5",
+    "@graphql-codegen/typescript": "^4.0.7",
+    "@graphql-codegen/typescript-resolvers": "^4.1.0",
+    "typescript": "^5.4.5",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.12.12"
+  }
+}
