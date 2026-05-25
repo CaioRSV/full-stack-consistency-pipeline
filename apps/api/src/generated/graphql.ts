@@ -44,6 +44,7 @@ export type MutationTransferCreditsArgs = {
 
 export type Query = {
   __typename?: 'Query';
+  tierSettings: Array<TierSetting>;
   transactions: Array<Transaction>;
   user?: Maybe<User>;
   users: Array<User>;
@@ -52,6 +53,15 @@ export type Query = {
 
 export type QueryUserArgs = {
   id: Scalars['ID']['input'];
+};
+
+export type TierSetting = {
+  __typename?: 'TierSetting';
+  feePercentage: Scalars['Float']['output'];
+  minSentVolume: Scalars['Float']['output'];
+  tier: UserTier;
+  transactionLimit: Scalars['Float']['output'];
+  upgradeReward: Scalars['Float']['output'];
 };
 
 export type Transaction = {
@@ -168,6 +178,7 @@ export type ResolversTypes = ResolversObject<{
   Mutation: ResolverTypeWrapper<{}>;
   Query: ResolverTypeWrapper<{}>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
+  TierSetting: ResolverTypeWrapper<TierSetting>;
   Transaction: ResolverTypeWrapper<Transaction>;
   TransactionType: TransactionType;
   User: ResolverTypeWrapper<User>;
@@ -182,6 +193,7 @@ export type ResolversParentTypes = ResolversObject<{
   Mutation: {};
   Query: {};
   String: Scalars['String']['output'];
+  TierSetting: TierSetting;
   Transaction: Transaction;
   User: User;
 }>;
@@ -193,9 +205,19 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
 }>;
 
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
+  tierSettings?: Resolver<Array<ResolversTypes['TierSetting']>, ParentType, ContextType>;
   transactions?: Resolver<Array<ResolversTypes['Transaction']>, ParentType, ContextType>;
   user?: Resolver<Maybe<ResolversTypes['User']>, ParentType, ContextType, RequireFields<QueryUserArgs, 'id'>>;
   users?: Resolver<Array<ResolversTypes['User']>, ParentType, ContextType>;
+}>;
+
+export type TierSettingResolvers<ContextType = any, ParentType extends ResolversParentTypes['TierSetting'] = ResolversParentTypes['TierSetting']> = ResolversObject<{
+  feePercentage?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  minSentVolume?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  tier?: Resolver<ResolversTypes['UserTier'], ParentType, ContextType>;
+  transactionLimit?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  upgradeReward?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type TransactionResolvers<ContextType = any, ParentType extends ResolversParentTypes['Transaction'] = ResolversParentTypes['Transaction']> = ResolversObject<{
@@ -224,6 +246,7 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
 export type Resolvers<ContextType = any> = ResolversObject<{
   Mutation?: MutationResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  TierSetting?: TierSettingResolvers<ContextType>;
   Transaction?: TransactionResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
 }>;

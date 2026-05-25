@@ -8,6 +8,7 @@ import {
   CREATE_USER,
   TRANSFER_CREDITS,
   ADD_CREDITS,
+  GET_TIER_SETTINGS,
 } from '../graphql/operations';
 
 export default function Home() {
@@ -47,6 +48,9 @@ export default function Home() {
   const [createUser, { loading: createLoading }] = useMutation(CREATE_USER);
   const [transferCredits, { loading: transferLoading }] = useMutation(TRANSFER_CREDITS);
   const [addCredits, { loading: addLoading }] = useMutation(ADD_CREDITS);
+
+  // Fetch tier settings dynamically from the backend (single source of truth)
+  const { data: tierData } = useQuery(GET_TIER_SETTINGS);
 
   // Auto-initialize sender and receiver selectors once users list is available
   useEffect(() => {
@@ -158,21 +162,12 @@ export default function Home() {
   const activeSender = listData?.users?.find((u: any) => u.id === senderId);
   const activeReceiver = listData?.users?.find((u: any) => u.id === receiverId);
 
-  // Live rules preview based on sender's tier
-  let feePercentage = 5;
-  let transferLimit = 200;
-  if (activeSender) {
-    if (activeSender.tier === 'SILVER') {
-      feePercentage = 3;
-      transferLimit = 500;
-    } else if (activeSender.tier === 'GOLD') {
-      feePercentage = 1;
-      transferLimit = 1500;
-    } else if (activeSender.tier === 'PLATINUM') {
-      feePercentage = 0;
-      transferLimit = Infinity;
-    }
-  }
+  // Dynamic rules lookup from backend tierSettings (no hardcoded values)
+  const senderTierConfig = tierData?.tierSettings?.find(
+    (s: any) => s.tier === activeSender?.tier
+  );
+  const feePercentage = senderTierConfig?.feePercentage ?? 5;
+  const transferLimit = senderTierConfig?.transactionLimit ?? 200;
 
   const enteredAmount = parseFloat(transferAmount) || 0;
   const computedFee = parseFloat((enteredAmount * (feePercentage / 100)).toFixed(2));
@@ -770,6 +765,66 @@ export default function Home() {
           </button>
         </form>
       </section>
+
+      {/* Dynamic Tier Rules Table — rendered entirely from backend data */}
+      {tierData?.tierSettings && (
+        <section className="glass-panel" style={{ marginTop: '2.5rem' }}>
+          <h2>Regras de Nível (Dados do Servidor)</h2>
+          <p style={{ marginBottom: '1.25rem' }}>
+            Esta tabela é construída dinamicamente a partir da query <code style={{ color: '#c084fc', background: 'rgba(168,85,247,0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.85rem' }}>tierSettings</code> do GraphQL. Nenhum valor está hardcoded no frontend.
+          </p>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.1)' }}>
+                  <th style={{ textAlign: 'left', padding: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Nível (Tier)</th>
+                  <th style={{ textAlign: 'right', padding: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Volume Mínimo</th>
+                  <th style={{ textAlign: 'right', padding: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Limite por Transação</th>
+                  <th style={{ textAlign: 'right', padding: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Taxa</th>
+                  <th style={{ textAlign: 'right', padding: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Recompensa de Upgrade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tierData.tierSettings.map((setting: any) => {
+                  const tierInfo = getTierDetails(setting.tier);
+                  return (
+                    <tr key={setting.tier} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '0.75rem' }}>
+                        <span
+                          style={{
+                            padding: '0.15rem 0.6rem',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            backgroundColor: tierInfo.bg,
+                            color: tierInfo.color,
+                            border: `1px solid ${tierInfo.border}`,
+                          }}
+                        >
+                          {tierInfo.label}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem', color: '#fff' }}>
+                        ${setting.minSentVolume.toFixed(2)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem', color: '#fff' }}>
+                        {setting.transactionLimit >= 999999 ? 'Sem limite' : `$${setting.transactionLimit.toFixed(2)}`}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem', color: setting.feePercentage === 0 ? '#10b981' : '#fbbf24' }}>
+                        {setting.feePercentage.toFixed(1)}%
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem', color: setting.upgradeReward > 0 ? '#c084fc' : '#64748b' }}>
+                        {setting.upgradeReward > 0 ? `+$${setting.upgradeReward.toFixed(2)}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <footer style={{ marginTop: '4rem', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
         <p>GraphQL Consistency pipeline guarantees type-safety across client & server.</p>
