@@ -20,6 +20,9 @@ export const userResolvers: Resolvers = {
     user: async (_parent, { id }) => {
       return users.find((u) => u.id === id) || null;
     },
+    users: async () => {
+      return users;
+    },
   },
   Mutation: {
     createUser: async (_parent, { name, email }) => {

@@ -16,10 +16,12 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
 type Documents = {
     "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.GetUserDocument,
     "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.CreateUserDocument,
+    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.GetUsersDocument,
 };
 const documents: Documents = {
     "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.GetUserDocument,
     "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.CreateUserDocument,
+    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.GetUsersDocument,
 };
 
 /**
@@ -44,6 +46,10 @@ export function graphql(source: "\n  query GetUser($id: ID!) {\n    user(id: $id
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

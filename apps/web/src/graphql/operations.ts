@@ -21,3 +21,15 @@ export const CREATE_USER = gql`
     }
   }
 `;
+
+export const GET_USERS = gql`
+  query GetUsers {
+    users {
+      id
+      name
+      email
+      createdAt
+    }
+  }
+`;
+
