@@ -3,12 +3,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { GET_USER, CREATE_USER, GET_USERS } from '../graphql/operations';
+import { User } from '../graphql/generated/graphql';
 
 export default function Home() {
   const [searchId, setSearchId] = useState('1');
   const [inputName, setInputName] = useState('');
   const [inputEmail, setInputEmail] = useState('');
-  const [createdUser, setCreatedUser] = useState<any>(null);
+  const [createdUser, setCreatedUser] = useState<User | null>(null);
 
   // 1. Fetch all users to display list
   const { data: listData, loading: listLoading, error: listError, refetch: refetchList } = useQuery(GET_USERS);
@@ -82,7 +83,7 @@ export default function Home() {
             gap: '1rem',
             marginTop: '1rem'
           }}>
-            {listData.users.map((user: any) => (
+            {listData.users.map((user: User) => (
               <div key={user.id} className="user-card" style={{ marginBottom: 0 }}>
                 <p style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   User ID: #{user.id}
@@ -141,7 +142,7 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            !searchLoading && !searchError && <p style={{ fontStyle: 'italic' }}>No user found with ID "{searchId}"</p>
+            !searchLoading && !searchError && <p style={{ fontStyle: 'italic' }}>No user found with ID &quot;{searchId}&quot;</p>
           )}
         </section>
 

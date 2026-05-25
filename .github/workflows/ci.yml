@@ -32,5 +32,19 @@ jobs:
       - name: Approve Builds
         run: pnpm approve-builds || true
 
+      - name: Run ESLint
+        run: pnpm --filter @pipeline/web lint
+
+      - name: Setup Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          nohup ollama serve > ollama.log 2>&1 &
+          echo "Waiting for Ollama to start..."
+          until curl -s http://localhost:11434 > /dev/null; do
+            sleep 2
+          done
+          echo "Ollama is running. Pulling qwen2.5-coder:3b..."
+          ollama pull qwen2.5-coder:3b
+
       - name: Run Consistency Validation
         run: pnpm run validate

@@ -2,11 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 async function main() {
-  if (process.env.GITHUB_ACTIONS === 'true') {
-    console.log('✈️ Running in GitHub Actions. Skipping local self-hosted AI audit.');
-    process.exit(0);
-  }
-
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
