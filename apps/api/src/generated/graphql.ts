@@ -18,7 +18,15 @@ export type Scalars = {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  addCredits: User;
   createUser: User;
+  transferCredits: Transaction;
+};
+
+
+export type MutationAddCreditsArgs = {
+  amount: Scalars['Float']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -27,8 +35,16 @@ export type MutationCreateUserArgs = {
   name: Scalars['String']['input'];
 };
 
+
+export type MutationTransferCreditsArgs = {
+  amount: Scalars['Float']['input'];
+  receiverId: Scalars['ID']['input'];
+  senderId: Scalars['ID']['input'];
+};
+
 export type Query = {
   __typename?: 'Query';
+  transactions: Array<Transaction>;
   user?: Maybe<User>;
   users: Array<User>;
 };
@@ -38,13 +54,41 @@ export type QueryUserArgs = {
   id: Scalars['ID']['input'];
 };
 
+export type Transaction = {
+  __typename?: 'Transaction';
+  amount: Scalars['Float']['output'];
+  createdAt: Scalars['String']['output'];
+  fee: Scalars['Float']['output'];
+  id: Scalars['ID']['output'];
+  receiver: User;
+  sender?: Maybe<User>;
+  type: TransactionType;
+};
+
+export enum TransactionType {
+  SystemCredit = 'SYSTEM_CREDIT',
+  TierReward = 'TIER_REWARD',
+  Transfer = 'TRANSFER'
+}
+
 export type User = {
   __typename?: 'User';
+  balance: Scalars['Float']['output'];
   createdAt: Scalars['String']['output'];
   email: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+  tier: UserTier;
+  totalSent: Scalars['Float']['output'];
+  transactions: Array<Transaction>;
 };
+
+export enum UserTier {
+  Bronze = 'BRONZE',
+  Gold = 'GOLD',
+  Platinum = 'PLATINUM',
+  Silver = 'SILVER'
+}
 
 export type WithIndex<TObject> = TObject & Record<string, any>;
 export type ResolversObject<TObject> = WithIndex<TObject>;
@@ -119,43 +163,68 @@ export type DirectiveResolverFn<TResult = {}, TParent = {}, TContext = {}, TArgs
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = ResolversObject<{
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  Float: ResolverTypeWrapper<Scalars['Float']['output']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Mutation: ResolverTypeWrapper<{}>;
   Query: ResolverTypeWrapper<{}>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
+  Transaction: ResolverTypeWrapper<Transaction>;
+  TransactionType: TransactionType;
   User: ResolverTypeWrapper<User>;
+  UserTier: UserTier;
 }>;
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = ResolversObject<{
   Boolean: Scalars['Boolean']['output'];
+  Float: Scalars['Float']['output'];
   ID: Scalars['ID']['output'];
   Mutation: {};
   Query: {};
   String: Scalars['String']['output'];
+  Transaction: Transaction;
   User: User;
 }>;
 
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
+  addCredits?: Resolver<ResolversTypes['User'], ParentType, ContextType, RequireFields<MutationAddCreditsArgs, 'amount' | 'userId'>>;
   createUser?: Resolver<ResolversTypes['User'], ParentType, ContextType, RequireFields<MutationCreateUserArgs, 'email' | 'name'>>;
+  transferCredits?: Resolver<ResolversTypes['Transaction'], ParentType, ContextType, RequireFields<MutationTransferCreditsArgs, 'amount' | 'receiverId' | 'senderId'>>;
 }>;
 
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
+  transactions?: Resolver<Array<ResolversTypes['Transaction']>, ParentType, ContextType>;
   user?: Resolver<Maybe<ResolversTypes['User']>, ParentType, ContextType, RequireFields<QueryUserArgs, 'id'>>;
   users?: Resolver<Array<ResolversTypes['User']>, ParentType, ContextType>;
 }>;
 
+export type TransactionResolvers<ContextType = any, ParentType extends ResolversParentTypes['Transaction'] = ResolversParentTypes['Transaction']> = ResolversObject<{
+  amount?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  fee?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  receiver?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
+  sender?: Resolver<Maybe<ResolversTypes['User']>, ParentType, ContextType>;
+  type?: Resolver<ResolversTypes['TransactionType'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserResolvers<ContextType = any, ParentType extends ResolversParentTypes['User'] = ResolversParentTypes['User']> = ResolversObject<{
+  balance?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  tier?: Resolver<ResolversTypes['UserTier'], ParentType, ContextType>;
+  totalSent?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  transactions?: Resolver<Array<ResolversTypes['Transaction']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type Resolvers<ContextType = any> = ResolversObject<{
   Mutation?: MutationResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  Transaction?: TransactionResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
 }>;
 

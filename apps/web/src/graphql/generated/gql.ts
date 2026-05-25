@@ -14,14 +14,18 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.GetUserDocument,
-    "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.CreateUserDocument,
-    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": typeof types.GetUsersDocument,
+    "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n      transactions {\n        id\n        amount\n        fee\n        type\n        createdAt\n        sender {\n          id\n          name\n        }\n        receiver {\n          id\n          name\n        }\n      }\n    }\n  }\n": typeof types.GetUserDocument,
+    "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n    }\n  }\n": typeof types.CreateUserDocument,
+    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n": typeof types.GetUsersDocument,
+    "\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n": typeof types.TransferCreditsDocument,
+    "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n": typeof types.AddCreditsDocument,
 };
 const documents: Documents = {
-    "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.GetUserDocument,
-    "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.CreateUserDocument,
-    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n": types.GetUsersDocument,
+    "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n      transactions {\n        id\n        amount\n        fee\n        type\n        createdAt\n        sender {\n          id\n          name\n        }\n        receiver {\n          id\n          name\n        }\n      }\n    }\n  }\n": types.GetUserDocument,
+    "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n    }\n  }\n": types.CreateUserDocument,
+    "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n": types.GetUsersDocument,
+    "\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n": types.TransferCreditsDocument,
+    "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n": types.AddCreditsDocument,
 };
 
 /**
@@ -41,15 +45,23 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"];
+export function graphql(source: "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n      transactions {\n        id\n        amount\n        fee\n        type\n        createdAt\n        sender {\n          id\n          name\n        }\n        receiver {\n          id\n          name\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n      transactions {\n        id\n        amount\n        fee\n        type\n        createdAt\n        sender {\n          id\n          name\n        }\n        receiver {\n          id\n          name\n        }\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"];
+export function graphql(source: "\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n    }\n  }\n"): (typeof documents)["\n  mutation CreateUser($name: String!, $email: String!) {\n    createUser(name: $name, email: $email) {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n    }\n  }\n"];
+export function graphql(source: "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n"): (typeof documents)["\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n"): (typeof documents)["\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};
