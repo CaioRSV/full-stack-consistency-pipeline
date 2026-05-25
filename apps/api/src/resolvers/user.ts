@@ -21,6 +21,47 @@ interface DbTransaction {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------
+// SINGLE SOURCE OF TRUTH for all tier business rules.
+// Any change here is automatically picked up by:
+//   1. The resolvers (validation, fee calculation, tier upgrades)
+//   2. The frontend via the `tierSettings` GraphQL query
+// ---------------------------------------------------------------
+const TIER_CONFIGS = [
+  {
+    tier: UserTier.Bronze,
+    transactionLimit: 200.0,
+    feePercentage: 5.0,
+    minSentVolume: 0.0,
+    upgradeReward: 0.0,
+  },
+  {
+    tier: UserTier.Silver,
+    transactionLimit: 500.0,
+    feePercentage: 3.0,
+    minSentVolume: 100.0,
+    upgradeReward: 10.0,
+  },
+  {
+    tier: UserTier.Gold,
+    transactionLimit: 1500.0,
+    feePercentage: 1.0,
+    minSentVolume: 500.0,
+    upgradeReward: 50.0,
+  },
+  {
+    tier: UserTier.Platinum,
+    transactionLimit: 999999.0,
+    feePercentage: 0.0,
+    minSentVolume: 2000.0,
+    upgradeReward: 150.0,
+  },
+];
+
+function getConfig(tier: UserTier) {
+  return TIER_CONFIGS.find((c) => c.tier === tier)!;
+}
+
 const users: DbUser[] = [
   {
     id: '1',
@@ -46,7 +87,7 @@ const users: DbUser[] = [
 
 const transactions: DbTransaction[] = [];
 
-// Seed initial transaction logs for the seeded users so they start with some history
+// Seed initial system credits for the seeded users
 transactions.push(
   {
     id: '1',
@@ -74,49 +115,38 @@ function calculateTotalSent(userId: string): number {
     .reduce((sum, t) => sum + t.amount, 0);
 }
 
-function checkAndUpgradeTier(user: DbUser): string[] {
+function checkAndUpgradeTier(user: DbUser): void {
   const totalSent = calculateTotalSent(user.id);
-  const rewardsLog: string[] = [];
 
-  let targetTier = UserTier.Bronze;
-  if (totalSent >= 2000) {
-    targetTier = UserTier.Platinum;
-  } else if (totalSent >= 500) {
-    targetTier = UserTier.Gold;
-  } else if (totalSent >= 100) {
-    targetTier = UserTier.Silver;
-  }
+  // Determine target tier based on TIER_CONFIGS thresholds (descending)
+  const sortedTiers = [...TIER_CONFIGS].sort((a, b) => b.minSentVolume - a.minSentVolume);
+  const targetConfig = sortedTiers.find((c) => totalSent >= c.minSentVolume)!;
+  const targetTier = targetConfig.tier;
 
-  const tierOrder = [UserTier.Bronze, UserTier.Silver, UserTier.Gold, UserTier.Platinum];
+  const tierOrder = TIER_CONFIGS.map((c) => c.tier);
   const currentIdx = tierOrder.indexOf(user.tier);
   const targetIdx = tierOrder.indexOf(targetTier);
 
   if (targetIdx > currentIdx) {
     for (let i = currentIdx + 1; i <= targetIdx; i++) {
       const tierReached = tierOrder[i];
-      let rewardAmount = 0;
-      if (tierReached === UserTier.Silver) rewardAmount = 10;
-      if (tierReached === UserTier.Gold) rewardAmount = 50;
-      if (tierReached === UserTier.Platinum) rewardAmount = 150;
+      const cfg = getConfig(tierReached);
 
-      if (rewardAmount > 0) {
-        user.balance = parseFloat((user.balance + rewardAmount).toFixed(2));
+      if (cfg.upgradeReward > 0) {
+        user.balance = parseFloat((user.balance + cfg.upgradeReward).toFixed(2));
         transactions.push({
           id: String(transactions.length + 1),
           senderId: null,
           receiverId: user.id,
-          amount: rewardAmount,
+          amount: cfg.upgradeReward,
           fee: 0,
           type: TransactionType.TierReward,
           createdAt: new Date().toISOString(),
         });
-        rewardsLog.push(`Promovido para o nível ${tierReached}! Recompensa de $${rewardAmount} creditada.`);
       }
     }
     user.tier = targetTier;
   }
-
-  return rewardsLog;
 }
 
 export const userResolvers: Resolvers = {
@@ -129,6 +159,9 @@ export const userResolvers: Resolvers = {
     },
     transactions: async () => {
       return transactions as any;
+    },
+    tierSettings: async () => {
+      return TIER_CONFIGS;
     },
   },
   Mutation: {
@@ -171,33 +204,26 @@ export const userResolvers: Resolvers = {
       if (!sender) throw new Error('Remetente não encontrado.');
       if (!receiver) throw new Error('Destinatário não encontrado.');
 
-      // Determinar limites de transferência e taxas baseados no Tier atual do remetente
-      let limit = 200;
-      let feeRate = 0.05;
-
-      if (sender.tier === UserTier.Silver) {
-        limit = 500;
-        feeRate = 0.03;
-      } else if (sender.tier === UserTier.Gold) {
-        limit = 1500;
-        feeRate = 0.01;
-      } else if (sender.tier === UserTier.Platinum) {
-        limit = Infinity;
-        feeRate = 0.0;
-      }
+      // Use TIER_CONFIGS as the single source of truth — not hardcoded conditionals
+      const cfg = getConfig(sender.tier);
+      const limit = cfg.transactionLimit;
+      const feeRate = cfg.feePercentage / 100;
 
       if (amount > limit) {
-        throw new Error(`Limite de transferência excedido para o nível ${sender.tier}. Limite individual: $${limit}.`);
+        throw new Error(
+          `Limite de transferência excedido para o nível ${sender.tier}. Limite individual: $${limit.toFixed(2)}.`
+        );
       }
 
       const fee = parseFloat((amount * feeRate).toFixed(2));
       const totalCost = amount + fee;
 
       if (sender.balance < totalCost) {
-        throw new Error(`Saldo insuficiente. Valor: $${amount.toFixed(2)} + Taxa: $${fee.toFixed(2)} = $${totalCost.toFixed(2)}. Saldo atual: $${sender.balance.toFixed(2)}.`);
+        throw new Error(
+          `Saldo insuficiente. Valor: $${amount.toFixed(2)} + Taxa: $${fee.toFixed(2)} = $${totalCost.toFixed(2)}. Saldo atual: $${sender.balance.toFixed(2)}.`
+        );
       }
 
-      // Executar a transferência atomicamente
       sender.balance = parseFloat((sender.balance - totalCost).toFixed(2));
       receiver.balance = parseFloat((receiver.balance + amount).toFixed(2));
 
@@ -212,7 +238,6 @@ export const userResolvers: Resolvers = {
       };
       transactions.push(newTx);
 
-      // Atualizar o Tier do remetente com base na nova volumetria de envios
       checkAndUpgradeTier(sender);
 
       return newTx as any;

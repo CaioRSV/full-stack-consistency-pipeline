@@ -34,10 +34,19 @@ type User {
   totalSent: Float!
 }
 
+type TierSetting {
+  tier: UserTier!
+  transactionLimit: Float!
+  feePercentage: Float!
+  minSentVolume: Float!
+  upgradeReward: Float!
+}
+
 type Query {
   user(id: ID!): User
   users: [User!]!
   transactions: [Transaction!]!
+  tierSettings: [TierSetting!]!
 }
 
 type Mutation {

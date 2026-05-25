@@ -19,6 +19,7 @@ type Documents = {
     "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      website\n      bio\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n": typeof types.GetUsersDocument,
     "\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n": typeof types.TransferCreditsDocument,
     "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n": typeof types.AddCreditsDocument,
+    "\n  query GetTierSettings {\n    tierSettings {\n      tier\n      transactionLimit\n      feePercentage\n      minSentVolume\n      upgradeReward\n    }\n  }\n": typeof types.GetTierSettingsDocument,
 };
 const documents: Documents = {
     "\n  query GetUser($id: ID!) {\n    user(id: $id) {\n      id\n      name\n      email\n      website\n      bio\n      createdAt\n      balance\n      tier\n      totalSent\n      transactions {\n        id\n        amount\n        fee\n        type\n        createdAt\n        sender {\n          id\n          name\n        }\n        receiver {\n          id\n          name\n        }\n      }\n    }\n  }\n": types.GetUserDocument,
@@ -26,6 +27,7 @@ const documents: Documents = {
     "\n  query GetUsers {\n    users {\n      id\n      name\n      email\n      website\n      bio\n      createdAt\n      balance\n      tier\n      totalSent\n    }\n  }\n": types.GetUsersDocument,
     "\n  mutation TransferCredits($senderId: ID!, $receiverId: ID!, $amount: Float!) {\n    transferCredits(senderId: $senderId, receiverId: $receiverId, amount: $amount) {\n      id\n      amount\n      fee\n      type\n      createdAt\n      sender {\n        id\n        name\n        balance\n        tier\n      }\n      receiver {\n        id\n        name\n        balance\n      }\n    }\n  }\n": types.TransferCreditsDocument,
     "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n": types.AddCreditsDocument,
+    "\n  query GetTierSettings {\n    tierSettings {\n      tier\n      transactionLimit\n      feePercentage\n      minSentVolume\n      upgradeReward\n    }\n  }\n": types.GetTierSettingsDocument,
 };
 
 /**
@@ -62,6 +64,10 @@ export function graphql(source: "\n  mutation TransferCredits($senderId: ID!, $r
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n"): (typeof documents)["\n  mutation AddCredits($userId: ID!, $amount: Float!) {\n    addCredits(userId: $userId, amount: $amount) {\n      id\n      name\n      balance\n      tier\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query GetTierSettings {\n    tierSettings {\n      tier\n      transactionLimit\n      feePercentage\n      minSentVolume\n      upgradeReward\n    }\n  }\n"): (typeof documents)["\n  query GetTierSettings {\n    tierSettings {\n      tier\n      transactionLimit\n      feePercentage\n      minSentVolume\n      upgradeReward\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

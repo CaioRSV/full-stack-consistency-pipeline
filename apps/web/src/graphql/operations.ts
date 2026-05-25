@@ -98,3 +98,15 @@ export const ADD_CREDITS = gql`
     }
   }
 `;
+
+export const GET_TIER_SETTINGS = gql`
+  query GetTierSettings {
+    tierSettings {
+      tier
+      transactionLimit
+      feePercentage
+      minSentVolume
+      upgradeReward
+    }
+  }
+`;
