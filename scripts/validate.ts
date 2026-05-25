@@ -11,6 +11,10 @@ try {
   execSync('npx pnpm -r typecheck', { stdio: 'inherit' });
   console.log('✅ TypeScript compilation validation passed.');
 
+  console.log('\n🤖 3. Running AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
+  execSync('npx ts-node scripts/ai/semantic-drift-detection.ts', { stdio: 'inherit' });
+  console.log('✅ AI Contract validation completed.');
+
   console.log('\n🎉 Consistency validation successful! Frontend and Backend contracts are aligned.');
 } catch (error) {
   console.error('\n❌ Consistency validation failed! Schema/Query inconsistency or compilation errors detected.');
