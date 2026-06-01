@@ -6,6 +6,8 @@ export const GET_USER = gql`
       id
       name
       email
+      website
+      bio
       createdAt
     }
   }
@@ -17,6 +19,8 @@ export const CREATE_USER = gql`
       id
       name
       email
+      website
+      bio
       createdAt
     }
   }
@@ -28,6 +32,8 @@ export const GET_USERS = gql`
       id
       name
       email
+      website
+      bio
       createdAt
     }
   }

@@ -137,7 +137,20 @@ export default function Home() {
               <p><strong>ID:</strong> {searchData.user.id}</p>
               <p><strong>Name:</strong> {searchData.user.name}</p>
               <p><strong>Email:</strong> {searchData.user.email}</p>
-              <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              {searchData.user.website && (
+                <p>
+                  <strong>Website:</strong>{' '}
+                  <a href={searchData.user.website} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                    {searchData.user.website}
+                  </a>
+                </p>
+              )}
+              {searchData.user.bio && (
+                <p style={{ marginTop: '0.5rem', fontStyle: 'italic', color: '#94a3b8' }}>
+                  {searchData.user.bio}
+                </p>
+              )}
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
                 <strong>Created At:</strong> {searchData.user.createdAt}
               </p>
             </div>
