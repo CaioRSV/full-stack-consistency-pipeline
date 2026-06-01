@@ -50,13 +50,6 @@ async function main() {
       process.exit(0);
     }
     let content = fs.readFileSync(file.path, 'utf8');
-    if (file.name === 'Frontend Page') {
-      // Strip large JSX return to optimize Ollama prefill/inference speed on CPU
-      const returnIndex = content.indexOf('return (');
-      if (returnIndex !== -1) {
-        content = content.substring(0, returnIndex) + '\n  // ... JSX layout content omitted for validation speed ...\n}';
-      }
-    }
     fileContents[file.name] = content;
   }
 
@@ -66,7 +59,7 @@ async function main() {
     console.log('🧠 Step 1: Sending backend files to self-hosted Qwen2.5-Coder 3B...');
 
     const prompt1 = `Analyze the following git diffs for the backend GraphQL schema and resolvers.
-Map out what has CHANGED (added, removed, modified queries/mutations and their types). Identify potential areas where a frontend could break due to these specific changes (e.g., missing new required fields, removed fields, type mismatches).
+Focus heavily on SEMANTIC DRIFT and FUNCTIONALITY BREAKS. Map out what has CHANGED. Identify potential areas where a frontend could break functionally, even if types remain valid (e.g., data format changes, structural API shifts, or new implicit assumptions).
 
 Return your output ONLY as a valid JSON object matching this interface:
 {
@@ -105,7 +98,7 @@ ${resolversDiff || '(No changes in resolvers)'}
     // Sanitize JSON
     let cleanJson1 = rawContent1.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
     const backendAnalysis = JSON.parse(cleanJson1);
-    
+
     console.log('✅ Backend analysis complete. Identified risk areas for frontend:');
     backendAnalysis.frontend_risk_areas?.forEach((r: string) => console.log(`  - ${r}`));
 
@@ -114,11 +107,20 @@ ${resolversDiff || '(No changes in resolvers)'}
 
     console.log('\n🧠 Step 2: Sending frontend files to verify against backend analysis...');
 
-    const prompt2 = `Now, analyze the following frontend operations and page code. Check them against your previous backend analysis to find any inconsistencies, semantic drifts, type conflicts, or mismatching/unused fields.
+    const prompt2 = `Now, rigorously analyze the following frontend operations and page code against your previous backend analysis. 
+CRITICAL INSTRUCTION: You are an extremely strict auditor focusing on SEMANTIC and FUNCTIONAL drift. Do NOT assume the frontend handles the backend changes automatically. 
+For EACH risk area identified in the backend:
+1. Examine EXACTLY HOW the frontend uses the data contextually. You MUST extract the exact line of code from the frontend where the field is used.
+2. If the frontend's code (e.g. \`<a href={user.website}>\` or \`{user.bio}\`) relies on assumptions that were broken by the backend changes, and LACKS the mitigating logic, you MUST output status: "FAIL".
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
   thinking: string; // A brief checklist or 1-2 sentence summary of what you verified across the files (under 30 words).
+  frontend_usage_analysis: Array<{
+    field: string;
+    exact_code_snippet: string; // Extract the EXACT line of code from the frontend where this field is rendered/used.
+    is_mitigating_logic_present: boolean; // True only if the snippet explicitly handles the structural break.
+  }>;
   status: "PASS" | "WARN" | "FAIL"; // PASS = approved/valid, WARN = approved with warnings, FAIL = not approved/invalid
   findings: Array<{
     file: string; // The file name or path analyzed (e.g. "operations.ts", "page.tsx")
