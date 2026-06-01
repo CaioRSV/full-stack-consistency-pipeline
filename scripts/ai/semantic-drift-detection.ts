@@ -1,5 +1,24 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
+
+function getGitDiff(filePath: string): string {
+  try {
+    const isCI = process.env.GITHUB_ACTIONS === 'true';
+    if (isCI) {
+      return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
+    } else {
+      let diff = execSync(`git diff HEAD -- "${filePath}"`, { encoding: 'utf8' });
+      if (!diff.trim()) {
+        diff = execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
+      }
+      return diff;
+    }
+  } catch (e) {
+    console.warn(`⚠️ Could not get git diff for ${filePath}`);
+    return '';
+  }
+}
 
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
@@ -10,13 +29,20 @@ async function main() {
   const pagePath = path.resolve(__dirname, '../../apps/web/src/app/page.tsx');
 
   const files = [
-    { name: 'GraphQL Schema', path: schemaPath },
-    { name: 'API Resolvers', path: resolversPath },
     { name: 'GraphQL Operations', path: operationsPath },
     { name: 'Frontend Page', path: pagePath },
   ];
 
-  // 1. Read files
+  // 1. Get backend changes
+  const schemaDiff = getGitDiff(schemaPath);
+  const resolversDiff = getGitDiff(resolversPath);
+
+  if (!schemaDiff.trim() && !resolversDiff.trim()) {
+    console.log('✅ No backend changes detected in Schema or Resolvers. Skipping AI inspection.');
+    process.exit(0);
+  }
+
+  // 2. Read frontend files
   const fileContents: Record<string, string> = {};
   for (const file of files) {
     if (!fs.existsSync(file.path)) {
@@ -34,19 +60,68 @@ async function main() {
     fileContents[file.name] = content;
   }
 
-  const prompt = `You are a GraphQL consistency auditor. Analyze the backend schema, resolvers, frontend queries, and frontend page code to check for any inconsistencies, semantic drifts, type conflicts, or mismatching/unused fields.
+  const systemPrompt = 'You are an AI code reviewer and GraphQL consistency auditor. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like ```json), or conversational prefix/suffix.';
 
-Please perform the following validation checks:
-1. Schema & Resolvers: Verify all query and mutation fields defined in the schema have corresponding resolvers, and their argument/return types match.
-2. Operations & Schema: Verify that all operations (queries/mutations) in the frontend operations file are valid according to the schema (e.g., correct fields, types, and parameters).
-3. Frontend Page & Operations: Verify that the frontend page correctly imports and invokes these operations with appropriate variables, and correctly uses the returned data types.
+  try {
+    console.log('🧠 Step 1: Sending backend files to self-hosted Qwen2.5-Coder 3B...');
 
-Return your output ONLY as a valid JSON object matching this TypeScript interface (no markdown codeblock wrapping, no preamble, no explanation outside the JSON):
+    const prompt1 = `Analyze the following git diffs for the backend GraphQL schema and resolvers.
+Map out what has CHANGED (added, removed, modified queries/mutations and their types). Identify potential areas where a frontend could break due to these specific changes (e.g., missing new required fields, removed fields, type mismatches).
+
+Return your output ONLY as a valid JSON object matching this interface:
+{
+  "backend_analysis": "Summary of what changed in the backend contract",
+  "frontend_risk_areas": ["List of things the frontend must update/handle due to these changes"]
+}
+
+=== 1. GraphQL Schema DIFF ===
+${schemaDiff || '(No changes in schema)'}
+
+=== 2. API Resolvers DIFF ===
+${resolversDiff || '(No changes in resolvers)'}
+`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt1 },
+    ];
+
+    const response1 = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(600000),
+      body: JSON.stringify({
+        model: 'qwen2.5-coder:3b',
+        messages: messages,
+        stream: false,
+        options: { temperature: 0.1, num_predict: 800 },
+      }),
+    });
+
+    if (!response1.ok) throw new Error(`Ollama API responded with status ${response1.status}`);
+    const data1 = (await response1.json()) as any;
+    const rawContent1 = data1.message?.content?.trim() || '';
+
+    // Sanitize JSON
+    let cleanJson1 = rawContent1.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
+    const backendAnalysis = JSON.parse(cleanJson1);
+    
+    console.log('✅ Backend analysis complete. Identified risk areas for frontend:');
+    backendAnalysis.frontend_risk_areas?.forEach((r: string) => console.log(`  - ${r}`));
+
+    // Add assistant reply to history
+    messages.push({ role: 'assistant', content: rawContent1 });
+
+    console.log('\n🧠 Step 2: Sending frontend files to verify against backend analysis...');
+
+    const prompt2 = `Now, analyze the following frontend operations and page code. Check them against your previous backend analysis to find any inconsistencies, semantic drifts, type conflicts, or mismatching/unused fields.
+
+Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
   thinking: string; // A brief checklist or 1-2 sentence summary of what you verified across the files (under 30 words).
   status: "PASS" | "WARN" | "FAIL"; // PASS = approved/valid, WARN = approved with warnings, FAIL = not approved/invalid
   findings: Array<{
-    file: string; // The file name or path analyzed (e.g. "schema.graphql", "resolvers/user.ts", etc.)
+    file: string; // The file name or path analyzed (e.g. "operations.ts", "page.tsx")
     level: "error" | "warning";
     description: string; // Detailed explanation of what specific inconsistency, type conflict, or drift was found, or why a field is problematic
     suggestion: string; // Clear instruction on how to fix this finding
@@ -54,69 +129,33 @@ interface AuditReport {
   explanation: string; // A clear final summary of why the changes are approved/validated (PASS/WARN) or not approved/invalidated (FAIL), stating where there are errors or if everything is clean.
 }
 
-Here are the codebase files:
-
-=== 1. GraphQL Schema (${schemaPath}) ===
-${fileContents['GraphQL Schema']}
-
-=== 2. API Resolvers (${resolversPath}) ===
-${fileContents['API Resolvers']}
-
-=== 3. GraphQL Operations (${operationsPath}) ===
+=== 3. GraphQL Operations ===
 ${fileContents['GraphQL Operations']}
 
-=== 4. Frontend Page (${pagePath}) ===
+=== 4. Frontend Page ===
 ${fileContents['Frontend Page']}
 `;
 
-  try {
-    console.log('🧠 Sending files context to self-hosted Qwen2.5-Coder 3B...');
+    messages.push({ role: 'user', content: prompt2 });
 
-    const response = await fetch('http://localhost:11434/api/chat', {
+    const response2 = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(600000), // 10 minutes timeout
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(600000),
       body: JSON.stringify({
         model: 'qwen2.5-coder:3b',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an AI code reviewer. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like ```json), or conversational prefix/suffix.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
+        messages: messages,
         stream: false,
-        options: {
-          temperature: 0.1,
-          num_predict: 800,
-        },
+        options: { temperature: 0.1, num_predict: 1200 },
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Ollama API responded with status ${response.status}`);
-    }
+    if (!response2.ok) throw new Error(`Ollama API responded with status ${response2.status}`);
+    const data2 = (await response2.json()) as any;
+    const rawContent2 = data2.message?.content?.trim() || '';
 
-    const data = (await response.json()) as any;
-    const rawContent = data.message?.content?.trim();
-
-    if (!rawContent) {
-      throw new Error('Ollama returned empty response content.');
-    }
-
-    // Attempt to sanitize JSON just in case the model added codeblocks
-    let cleanJsonStr = rawContent;
-    if (cleanJsonStr.startsWith('```')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '');
-    }
-    cleanJsonStr = cleanJsonStr.trim();
-
-    const report = JSON.parse(cleanJsonStr);
+    let cleanJson2 = rawContent2.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
+    const report = JSON.parse(cleanJson2);
 
     console.log('\n==========================================');
     console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');
