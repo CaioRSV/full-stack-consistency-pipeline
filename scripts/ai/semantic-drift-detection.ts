@@ -160,7 +160,7 @@ ${fileContents['Frontend Page']}
     console.error('❌ Failed to run AI contract verification:', error.message);
     console.warn('⚠️ Ollama/Qwen model might not be ready or running. Skipping AI check.');
     // Don't fail the build if the local model service is temporarily unreachable
-    process.exit(0);
+    process.exit(1);
   }
 }
 

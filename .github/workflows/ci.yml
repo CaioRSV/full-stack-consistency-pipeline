@@ -46,5 +46,11 @@ jobs:
           echo "Ollama is running. Pulling qwen2.5-coder:3b..."
           ollama pull qwen2.5-coder:3b
 
-      - name: Run Consistency Validation
-        run: pnpm run validate
+      - name: 🔄 1. GraphQL Code Generator Validation
+        run: npx graphql-codegen --config codegen.ts
+
+      - name: 🔍 2. TypeScript Compilation Check
+        run: pnpm -r typecheck
+
+      - name: 🤖 3. AI-Assisted Contract Validation
+        run: npx ts-node scripts/ai/semantic-drift-detection.ts
