@@ -55,12 +55,7 @@ async function main() {
     let content = fs.readFileSync(file.path, 'utf8');
     
     if (file.name === 'Frontend Page') {
-      // Strip JSX layout entirely
-      const returnIndex = content.indexOf('return (');
-      if (returnIndex !== -1) {
-        content = content.substring(0, returnIndex) + '\n  // ... UI layout omitted ...\n}';
-      }
-      
+      // We MUST keep the JSX layout because the LLM needs to see how fields like 'website' or 'bio' are rendered (e.g., inside <a href>).
       // Clean out extensive imports or purely internal hooks to save tokens
       content = content.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, ''); 
     }
@@ -74,8 +69,15 @@ async function main() {
     console.log('🧠 Step 1: Sending unified prompt to self-hosted Qwen2.5-Coder 3B...');
 
     const unifiedPrompt = `
-You are an AI code reviewer and GraphQL consistency auditor.
-Analyze the provided backend Git diffs and evaluate if they introduce breaking changes or semantic drift into the provided frontend code.
+You are an extremely strict AI code reviewer and GraphQL consistency auditor.
+Your job is to catch SEMANTIC DRIFT and FUNCTIONALITY BREAKS between the backend and frontend.
+
+CRITICAL INSTRUCTIONS:
+1. Look at the API Resolvers DIFF. Are fields like 'website' or 'bio' returning stringified JSON or raw HTML strings instead of plain text/URLs?
+2. If yes, look at the Frontend Page Code. Examine EXACTLY HOW the frontend renders those fields. 
+   - Does it do \`<a href={user.website}>\`? If 'website' is JSON, that link will be broken!
+   - Does it do \`{user.bio}\`? If 'bio' is raw HTML, React will escape it and render raw tags instead of formatted text!
+3. If the frontend lacks mitigating logic (e.g. \`JSON.parse(user.website)\` or \`dangerouslySetInnerHTML\`), you MUST output status: "FAIL". Do NOT assume the frontend handles backend changes automatically.
 
 === 1. GraphQL Schema DIFF ===
 ${schemaDiff || '(No changes)'}
@@ -91,7 +93,7 @@ ${fileContents['Frontend Page']}
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
-  thinking: string; 
+  thinking: string; // Detail exactly how the fields are returned by the resolvers and how they are consumed in the frontend JSX.
   status: "PASS" | "WARN" | "FAIL";
   backend_changes_summary: string;
   findings: Array<{
