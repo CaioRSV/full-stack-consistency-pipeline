@@ -6,14 +6,17 @@ function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
     if (isCI) {
-      return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
-    } else {
-      let diff = execSync(`git diff HEAD -- "${filePath}"`, { encoding: 'utf8' });
-      if (!diff.trim()) {
-        diff = execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
-      }
-      return diff;
+      // GitHub Actions provides the base ref (e.g., 'main') and head ref (e.g., 'feature-branch')
+      const base = process.env.GITHUB_BASE_REF || 'origin/main';
+      return execSync(`git diff ${base}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
     }
+    
+    // Local fallback
+    let diff = execSync(`git diff HEAD -- "${filePath}"`, { encoding: 'utf8' });
+    if (!diff.trim()) {
+      diff = execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
+    }
+    return diff;
   } catch (e) {
     console.warn(`⚠️ Could not get git diff for ${filePath}`);
     return '';
@@ -50,114 +53,85 @@ async function main() {
       process.exit(0);
     }
     let content = fs.readFileSync(file.path, 'utf8');
+    
+    if (file.name === 'Frontend Page') {
+      // Strip JSX layout entirely
+      const returnIndex = content.indexOf('return (');
+      if (returnIndex !== -1) {
+        content = content.substring(0, returnIndex) + '\n  // ... UI layout omitted ...\n}';
+      }
+      
+      // Clean out extensive imports or purely internal hooks to save tokens
+      content = content.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, ''); 
+    }
+    
     fileContents[file.name] = content;
   }
 
   const systemPrompt = 'You are an AI code reviewer and GraphQL consistency auditor. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like ```json), or conversational prefix/suffix.';
 
   try {
-    console.log('🧠 Step 1: Sending backend files to self-hosted Qwen2.5-Coder 3B...');
+    console.log('🧠 Step 1: Sending unified prompt to self-hosted Qwen2.5-Coder 3B...');
 
-    const prompt1 = `Analyze the following git diffs for the backend GraphQL schema and resolvers.
-Focus heavily on SEMANTIC DRIFT and FUNCTIONALITY BREAKS. Map out what has CHANGED. Identify potential areas where a frontend could break functionally, even if types remain valid (e.g., data format changes, structural API shifts, or new implicit assumptions).
-
-Return your output ONLY as a valid JSON object matching this interface:
-{
-  "backend_analysis": "Summary of what changed in the backend contract",
-  "frontend_risk_areas": ["List of things the frontend must update/handle due to these changes"]
-}
+    const unifiedPrompt = `
+You are an AI code reviewer and GraphQL consistency auditor.
+Analyze the provided backend Git diffs and evaluate if they introduce breaking changes or semantic drift into the provided frontend code.
 
 === 1. GraphQL Schema DIFF ===
-${schemaDiff || '(No changes in schema)'}
+${schemaDiff || '(No changes)'}
 
 === 2. API Resolvers DIFF ===
-${resolversDiff || '(No changes in resolvers)'}
+${resolversDiff || '(No changes)'}
+
+=== 3. Frontend GraphQL Operations ===
+${fileContents['GraphQL Operations']}
+
+=== 4. Frontend Page Code ===
+${fileContents['Frontend Page']}
+
+Return your output ONLY as a valid JSON object matching this TypeScript interface:
+interface AuditReport {
+  thinking: string; 
+  status: "PASS" | "WARN" | "FAIL";
+  backend_changes_summary: string;
+  findings: Array<{
+    file: string;
+    level: "error" | "warning";
+    description: string;
+    suggestion: string;
+  }>;
+  explanation: string;
+}
 `;
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt1 },
+      { role: 'user', content: unifiedPrompt }
     ];
 
-    const response1 = await fetch('http://localhost:11434/api/chat', {
+    const response = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(600000),
+      signal: AbortSignal.timeout(300000), // Reduced timeout to 5 mins
       body: JSON.stringify({
         model: 'qwen2.5-coder:3b',
         messages: messages,
         stream: false,
-        options: { temperature: 0.1, num_predict: 800 },
+        format: 'json', // ✨ Forces Ollama to output valid JSON
+        options: { 
+          temperature: 0.1, 
+          num_predict: 1200 
+        },
       }),
     });
 
-    if (!response1.ok) throw new Error(`Ollama API responded with status ${response1.status}`);
-    const data1 = (await response1.json()) as any;
-    const rawContent1 = data1.message?.content?.trim() || '';
+    if (!response.ok) throw new Error(`Ollama API responded with status ${response.status}`);
+    const data = (await response.json()) as any;
+    const rawContent = data.message?.content?.trim() || '';
 
     // Sanitize JSON
-    let cleanJson1 = rawContent1.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
-    const backendAnalysis = JSON.parse(cleanJson1);
-
-    console.log('✅ Backend analysis complete. Identified risk areas for frontend:');
-    backendAnalysis.frontend_risk_areas?.forEach((r: string) => console.log(`  - ${r}`));
-
-    // Add assistant reply to history
-    messages.push({ role: 'assistant', content: rawContent1 });
-
-    console.log('\n🧠 Step 2: Sending frontend files to verify against backend analysis...');
-
-    const prompt2 = `Now, rigorously analyze the following frontend operations and page code against your previous backend analysis. 
-CRITICAL INSTRUCTION: You are an extremely strict auditor focusing on SEMANTIC and FUNCTIONAL drift. Do NOT assume the frontend handles the backend changes automatically. 
-For EACH risk area identified in the backend:
-1. Examine EXACTLY HOW the frontend uses the data contextually. You MUST extract the exact line of code from the frontend where the field is used.
-2. If the frontend's code (e.g. \`<a href={user.website}>\` or \`{user.bio}\`) relies on assumptions that were broken by the backend changes, and LACKS the mitigating logic, you MUST output status: "FAIL".
-
-Return your output ONLY as a valid JSON object matching this TypeScript interface:
-interface AuditReport {
-  thinking: string; // A brief checklist or 1-2 sentence summary of what you verified across the files (under 30 words).
-  frontend_usage_analysis: Array<{
-    field: string;
-    exact_code_snippet: string; // Extract the EXACT line of code from the frontend where this field is rendered/used.
-    is_mitigating_logic_present: boolean; // True only if the snippet explicitly handles the structural break.
-  }>;
-  status: "PASS" | "WARN" | "FAIL"; // PASS = approved/valid, WARN = approved with warnings, FAIL = not approved/invalid
-  findings: Array<{
-    file: string; // The file name or path analyzed (e.g. "operations.ts", "page.tsx")
-    level: "error" | "warning";
-    description: string; // Detailed explanation of what specific inconsistency, type conflict, or drift was found, or why a field is problematic
-    suggestion: string; // Clear instruction on how to fix this finding
-  }>;
-  explanation: string; // A clear final summary of why the changes are approved/validated (PASS/WARN) or not approved/invalidated (FAIL), stating where there are errors or if everything is clean.
-}
-
-=== 3. GraphQL Operations ===
-${fileContents['GraphQL Operations']}
-
-=== 4. Frontend Page ===
-${fileContents['Frontend Page']}
-`;
-
-    messages.push({ role: 'user', content: prompt2 });
-
-    const response2 = await fetch('http://localhost:11434/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(600000),
-      body: JSON.stringify({
-        model: 'qwen2.5-coder:3b',
-        messages: messages,
-        stream: false,
-        options: { temperature: 0.1, num_predict: 1200 },
-      }),
-    });
-
-    if (!response2.ok) throw new Error(`Ollama API responded with status ${response2.status}`);
-    const data2 = (await response2.json()) as any;
-    const rawContent2 = data2.message?.content?.trim() || '';
-
-    let cleanJson2 = rawContent2.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
-    const report = JSON.parse(cleanJson2);
+    let cleanJson = rawContent.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
+    const report = JSON.parse(cleanJson);
 
     console.log('\n==========================================');
     console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');
@@ -167,6 +141,13 @@ ${fileContents['Frontend Page']}
       console.log('\n🧠 Model Thinking & Reasoning Process:');
       console.log('------------------------------------------');
       console.log(report.thinking);
+      console.log('------------------------------------------');
+    }
+
+    if (report.backend_changes_summary) {
+      console.log('\n🔙 Backend Changes Summary:');
+      console.log('------------------------------------------');
+      console.log(report.backend_changes_summary);
       console.log('------------------------------------------');
     }
 
