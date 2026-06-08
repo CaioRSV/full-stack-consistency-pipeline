@@ -1,3 +1,26 @@
+enum UserTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum TransactionType {
+  TRANSFER
+  SYSTEM_CREDIT
+  TIER_REWARD
+}
+
+type Transaction {
+  id: ID!
+  sender: User
+  receiver: User!
+  amount: Float!
+  fee: Float!
+  type: TransactionType!
+  createdAt: String!
+}
+
 type User {
   id: ID!
   name: String!
@@ -5,13 +28,21 @@ type User {
   website: String
   bio: String
   createdAt: String!
+  balance: Float!
+  tier: UserTier!
+  transactions: [Transaction!]!
+  totalSent: Float!
 }
 
 type Query {
   user(id: ID!): User
   users: [User!]!
+  transactions: [Transaction!]!
 }
 
 type Mutation {
   createUser(name: String!, email: String!): User!
+  transferCredits(senderId: ID!, receiverId: ID!, amount: Float!): Transaction!
+  addCredits(userId: ID!, amount: Float!): User!
 }
+
