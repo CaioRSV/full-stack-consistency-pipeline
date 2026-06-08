@@ -6,9 +6,23 @@ function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
     if (isCI) {
-      // GitHub Actions provides the base ref (e.g., 'main') and head ref (e.g., 'feature-branch')
-      const base = process.env.GITHUB_BASE_REF || 'origin/main';
-      return execSync(`git diff ${base}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
+      // GitHub Actions provides the base ref (e.g., 'main')
+      const baseRef = process.env.GITHUB_BASE_REF || 'main';
+      const remoteBase = baseRef.startsWith('origin/') ? baseRef : `origin/${baseRef}`;
+      
+      try {
+        // Try to fetch the target branch to fix shallow clone errors (fetch-depth: 1)
+        execSync(`git fetch origin ${baseRef.replace('origin/', '')} --depth=1`, { stdio: 'ignore' });
+      } catch (e) {
+        // Ignore fetch errors
+      }
+      
+      try {
+        return execSync(`git diff ${remoteBase}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
+      } catch (e) {
+        // Fallback if the remoteBase is still not found
+        return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
+      }
     }
     
     // Local fallback
