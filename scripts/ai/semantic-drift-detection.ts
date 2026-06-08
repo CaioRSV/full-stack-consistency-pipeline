@@ -9,14 +9,14 @@ function getGitDiff(filePath: string): string {
       // GitHub Actions provides the base ref (e.g., 'main')
       const baseRef = process.env.GITHUB_BASE_REF || 'main';
       const remoteBase = baseRef.startsWith('origin/') ? baseRef : `origin/${baseRef}`;
-      
+
       try {
         // Try to fetch the target branch to fix shallow clone errors (fetch-depth: 1)
         execSync(`git fetch origin ${baseRef.replace('origin/', '')} --depth=1`, { stdio: 'ignore' });
       } catch (e) {
         // Ignore fetch errors
       }
-      
+
       try {
         return execSync(`git diff ${remoteBase}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
       } catch (e) {
@@ -24,7 +24,7 @@ function getGitDiff(filePath: string): string {
         return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
       }
     }
-    
+
     // Local fallback
     let diff = execSync(`git diff HEAD -- "${filePath}"`, { encoding: 'utf8' });
     if (!diff.trim()) {
@@ -67,13 +67,13 @@ async function main() {
       process.exit(0);
     }
     let content = fs.readFileSync(file.path, 'utf8');
-    
+
     if (file.name === 'Frontend Page') {
-      // We MUST keep the JSX layout because the LLM needs to see how fields like 'website' or 'bio' are rendered (e.g., inside <a href>).
+      // We MUST keep the JSX layout because the LLM needs to see how fields are rendered (e.g., inside <a href> or <img src>).
       // Clean out extensive imports or purely internal hooks to save tokens
-      content = content.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, ''); 
+      content = content.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, '');
     }
-    
+
     fileContents[file.name] = content;
   }
 
@@ -87,11 +87,11 @@ You are an extremely strict AI code reviewer and GraphQL consistency auditor.
 Your job is to catch SEMANTIC DRIFT and FUNCTIONALITY BREAKS between the backend and frontend.
 
 CRITICAL INSTRUCTIONS:
-1. Look at the API Resolvers DIFF. Are fields like 'website' or 'bio' returning stringified JSON or raw HTML strings instead of plain text/URLs?
-2. If yes, look at the Frontend Page Code. Examine EXACTLY HOW the frontend renders those fields. 
-   - Does it do \`<a href={user.website}>\`? If 'website' is JSON, that link will be broken!
-   - Does it do \`{user.bio}\`? If 'bio' is raw HTML, React will escape it and render raw tags instead of formatted text!
-3. If the frontend lacks mitigating logic (e.g. \`JSON.parse(user.website)\` or \`dangerouslySetInnerHTML\`), you MUST output status: "FAIL". Do NOT assume the frontend handles backend changes automatically.
+1. Look at the API Resolvers DIFF and Schema DIFF. Identify any fields whose underlying data format, semantic meaning, or type has changed (e.g., a field now returning stringified JSON, raw HTML, or a different object structure, even if it still technically returns a "String").
+2. If semantic changes exist, look at the Frontend Page Code. Examine EXACTLY HOW the frontend renders those specific fields.
+   - Look for how the changed fields are used in JSX (e.g., inside \`<a href={...}>\`, as image sources, or directly rendered as text \`{...}\`).
+   - Determine if the new data format from the backend will break the frontend rendering (e.g., an object passed to an \`href\`, or HTML rendered as escaped text).
+3. If the frontend lacks mitigating logic (e.g. \`JSON.parse()\` or \`dangerouslySetInnerHTML\`) to handle the new format, you MUST output status: "FAIL". Do NOT assume the frontend handles backend changes automatically.
 
 === 1. GraphQL Schema DIFF ===
 ${schemaDiff || '(No changes)'}
@@ -115,6 +115,8 @@ interface AuditReport {
     level: "error" | "warning";
     description: string;
     suggestion: string;
+    frontend_snippet?: string; // Provide the exact snippet of frontend code that would break.
+    backend_diff_snippet?: string; // Provide the exact snippet of backend diff that caused the issue.
   }>;
   explanation: string;
 }
@@ -134,9 +136,9 @@ interface AuditReport {
         messages: messages,
         stream: false,
         format: 'json', // ✨ Forces Ollama to output valid JSON
-        options: { 
-          temperature: 0.1, 
-          num_predict: 1200 
+        options: {
+          temperature: 0.1,
+          num_predict: 1200
         },
       }),
     });
@@ -180,7 +182,17 @@ interface AuditReport {
 
     if (report.findings && report.findings.length > 0) {
       console.log('\n🔍 Findings & Error Locations:');
-      console.table(report.findings);
+      for (const finding of report.findings) {
+        console.log(`\n[${finding.level.toUpperCase()}] File: ${finding.file}`);
+        console.log(`Description: ${finding.description}`);
+        if (finding.backend_diff_snippet) {
+          console.log(`\n--- Backend Diff Snippet ---\n${finding.backend_diff_snippet}\n----------------------------`);
+        }
+        if (finding.frontend_snippet) {
+          console.log(`\n--- Frontend Snippet ---\n${finding.frontend_snippet}\n------------------------`);
+        }
+        console.log(`Suggestion: ${finding.suggestion}`);
+      }
     } else {
       console.log('\n✨ No semantic anomalies, type conflicts, or inconsistencies detected. Codebases are perfectly aligned.');
     }
