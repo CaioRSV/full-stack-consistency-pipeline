@@ -1,5 +1,7 @@
 # Full-Stack Consistency Pipeline
 
+Este projeto possui documentação detalhada sobre o estágio atual da branch `main` e a explicação de erros nas branches de teste em português em [DOCUMENTACAO.md](file:///Users/asael/Documents/IF1015/full-stack-consistency-pipeline/DOCUMENTACAO.md).
+
 This is a monorepo setup containing both a frontend (Next.js) and a backend (Fastify + GraphQL). It features an evaluation pipeline that ensures consistency across the stack.
 
 ## Setup
