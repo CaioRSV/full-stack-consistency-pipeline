@@ -4,6 +4,8 @@ interface DbUser {
   id: string;
   name: string;
   email: string;
+  website?: string;
+  bio?: string;
   createdAt: string;
   balance: number;
   tier: UserTier;

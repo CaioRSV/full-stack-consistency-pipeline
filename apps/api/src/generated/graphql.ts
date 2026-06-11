@@ -74,6 +74,7 @@ export enum TransactionType {
 export type User = {
   __typename?: 'User';
   balance: Scalars['Float']['output'];
+  bio?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['String']['output'];
   email: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -81,6 +82,7 @@ export type User = {
   tier: UserTier;
   totalSent: Scalars['Float']['output'];
   transactions: Array<Transaction>;
+  website?: Maybe<Scalars['String']['output']>;
 };
 
 export enum UserTier {
@@ -211,6 +213,7 @@ export type TransactionResolvers<ContextType = any, ParentType extends Resolvers
 
 export type UserResolvers<ContextType = any, ParentType extends ResolversParentTypes['User'] = ResolversParentTypes['User']> = ResolversObject<{
   balance?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  bio?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -218,6 +221,7 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
   tier?: Resolver<ResolversTypes['UserTier'], ParentType, ContextType>;
   totalSent?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   transactions?: Resolver<Array<ResolversTypes['Transaction']>, ParentType, ContextType>;
+  website?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

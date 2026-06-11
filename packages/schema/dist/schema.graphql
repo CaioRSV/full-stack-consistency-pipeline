@@ -25,6 +25,8 @@ type User {
   id: ID!
   name: String!
   email: String!
+  website: String
+  bio: String
   createdAt: String!
   balance: Float!
   tier: UserTier!
