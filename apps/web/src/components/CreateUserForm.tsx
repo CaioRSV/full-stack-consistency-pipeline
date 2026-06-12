@@ -1,3 +1,6 @@
+/**
+ * Description: Renders the simple registration form at the bottom of the dashboard, letting users input name and email to create a new user profile with default BRONZE tier and $100 starting balance.
+ */
 import React from 'react';
 
 interface CreateUserFormProps {

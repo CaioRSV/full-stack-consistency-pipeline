@@ -1,3 +1,6 @@
+/**
+ * Description: Renders the transaction history table and logs for a selected user account. Lists transfers, reward bonuses, and system credits with directional signs (+/-) and tier-based color formatting.
+ */
 import React from 'react';
 import { ApolloError } from '@apollo/client';
 import { getTierDetails, getTxTypeDetails } from '@/utils/styleHelpers';

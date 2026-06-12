@@ -1,3 +1,6 @@
+/**
+ * Description: Renders absolute positioned floating pop-up/toast notification banners displaying status alerts (e.g. success, error, info) for ledger updates.
+ */
 import React from 'react';
 import { NotificationState } from '@/hooks/useLedger';
 

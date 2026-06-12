@@ -1,3 +1,6 @@
+/**
+ * Description: Renders the transaction simulator form. Provides selectors for sender/receiver, input for transfer amount, and computes live previews of fee percentages, limits, and total costs based on the sender's loyalty tier constraints.
+ */
 import React from 'react';
 
 interface User {

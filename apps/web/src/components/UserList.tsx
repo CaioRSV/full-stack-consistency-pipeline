@@ -1,3 +1,6 @@
+/**
+ * Description: Renders the system accounts grid showing each user's ID, email, current balance, total money sent, and loyalty tier badge. Includes quick buttons to award +$50 or +$200 credit mutations.
+ */
 import React from 'react';
 import { ApolloError } from '@apollo/client';
 import { getTierDetails } from '@/utils/styleHelpers';

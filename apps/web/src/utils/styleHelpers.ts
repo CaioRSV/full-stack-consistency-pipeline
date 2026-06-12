@@ -1,3 +1,6 @@
+/**
+ * Description: Helper functions to return specific CSS styles, background colors, borders, and text labels for user loyalty tiers (BRONZE, SILVER, GOLD, PLATINUM) and transaction types (TRANSFER, SYSTEM_CREDIT, TIER_REWARD).
+ */
 export interface TierStyle {
   label: string;
   bg: string;

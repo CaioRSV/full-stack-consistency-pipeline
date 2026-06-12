@@ -1,3 +1,6 @@
+/**
+ * Description: Renders the web app header including the title and a live server connection status indicator badge (showing if GraphQL API is online or offline).
+ */
 import React from 'react';
 
 interface HeaderProps {

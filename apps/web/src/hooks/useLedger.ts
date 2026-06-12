@@ -1,3 +1,6 @@
+/**
+ * Description: Custom React state and GraphQL data management hook. Manages Apollo client mutations/queries for creating users, adding credits, and transferring credits. Coordinates live simulations of tax rates, tier upgrades, cost calculations, and user inputs.
+ */
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import {

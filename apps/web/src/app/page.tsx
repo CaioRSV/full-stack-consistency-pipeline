@@ -1,3 +1,6 @@
+/**
+ * Description: The main orchestrator and layout page for the Web app Dashboard. Integrates components for User List, Transfer simulator, transaction history logs, and user creation form, linking them to useLedger state.
+ */
 'use client';
 
 import React from 'react';

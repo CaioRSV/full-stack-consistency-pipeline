@@ -37,18 +37,96 @@ function getGitDiff(filePath: string): string {
   }
 }
 
+function getFilesRecursively(dir: string, fileList: string[] = []): string[] {
+  if (!fs.existsSync(dir)) return fileList;
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filepath = path.join(dir, file);
+    const stat = fs.statSync(filepath);
+    if (stat.isDirectory()) {
+      if (file !== 'generated' && file !== 'node_modules' && file !== '.next') {
+        getFilesRecursively(filepath, fileList);
+      }
+    } else {
+      const ext = path.extname(filepath);
+      if (['.ts', '.tsx'].includes(ext)) {
+        fileList.push(filepath);
+      }
+    }
+  }
+  return fileList;
+}
+
+function getFileDescription(filePath: string): string {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    const comments: string[] = [];
+    let inBlockComment = false;
+
+    for (let i = 0; i < Math.min(lines.length, 30); i++) {
+      const line = lines[i].trim();
+
+      if (line.startsWith('/*')) {
+        inBlockComment = true;
+        comments.push(line.replace('/*', ''));
+        if (line.endsWith('*/')) {
+          inBlockComment = false;
+        }
+      } else if (inBlockComment) {
+        comments.push(line.replace('*/', ''));
+        if (line.endsWith('*/')) {
+          inBlockComment = false;
+        }
+      } else if (line.startsWith('//')) {
+        comments.push(line.replace(/^\/\/+/, '').trim());
+      } else if (line.length > 0 && !line.startsWith('import') && !line.startsWith("'use client'")) {
+        break;
+      }
+    }
+
+    let description = comments.join(' ').trim();
+    description = description
+      .replace(/^\s*\*\s*/gm, '') // Remove lead asterisks in jsdoc
+      .replace(/Description:\s*/i, '') // Remove "Description:" prefix label
+      .replace(/\s+/g, ' ');
+    return description || 'No description provided in file headers.';
+  } catch (e) {
+    return 'Could not read description.';
+  }
+}
+
+async function callOllama(messages: Array<{ role: string; content: string }>, numPredict = 1200): Promise<string> {
+  const response = await fetch('http://localhost:11434/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(300000), // 5 min timeout
+    body: JSON.stringify({
+      model: 'qwen2.5-coder:3b',
+      messages: messages,
+      stream: false,
+      format: 'json', // Forces Ollama to output valid JSON
+      options: {
+        temperature: 0.1,
+        num_predict: numPredict
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama API responded with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as any;
+  const rawContent = data.message?.content?.trim() || '';
+  return rawContent.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
+}
+
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
   const resolversPath = path.resolve(__dirname, '../../apps/api/src/resolvers/user.ts');
-  const operationsPath = path.resolve(__dirname, '../../apps/web/src/graphql/operations.ts');
-  const pagePath = path.resolve(__dirname, '../../apps/web/src/app/page.tsx');
-
-  const files = [
-    { name: 'GraphQL Operations', path: operationsPath },
-    { name: 'Frontend Page', path: pagePath },
-  ];
 
   // 1. Get backend changes
   const schemaDiff = getGitDiff(schemaPath);
@@ -59,36 +137,107 @@ async function main() {
     process.exit(0);
   }
 
-  // 2. Read frontend files
-  const fileContents: Record<string, string> = {};
-  for (const file of files) {
-    if (!fs.existsSync(file.path)) {
-      console.warn(`⚠️ Warning: Missing ${file.name} at "${file.path}". Skipping AI inspection.`);
-      process.exit(0);
-    }
-    let content = fs.readFileSync(file.path, 'utf8');
+  console.log('🔙 Backend changes detected. Scanning frontend workspace...');
 
-    if (file.name === 'Frontend Page') {
-      // We MUST keep the JSX layout because the LLM needs to see how fields are rendered (e.g., inside <a href> or <img src>).
-      // Clean out extensive imports or purely internal hooks to save tokens
-      content = content.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, '');
-    }
+  // 2. Scan frontend directory recursively
+  const srcDir = path.resolve(__dirname, '../../apps/web/src');
+  const allFiles = getFilesRecursively(srcDir);
 
-    fileContents[file.name] = content;
+  const catalog = allFiles.map(filePath => {
+    const relativePath = path.relative(srcDir, filePath).replace(/\\/g, '/');
+    const description = getFileDescription(filePath);
+    return {
+      relativePath,
+      fullPath: filePath,
+      description
+    };
+  });
+
+  console.log(`📂 Scanned ${catalog.length} frontend files for evaluation:`);
+  for (const item of catalog) {
+    console.log(`  - [${item.relativePath}]: "${item.description}"`);
   }
 
   const systemPrompt = 'You are an AI code reviewer and GraphQL consistency auditor. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like ```json), or conversational prefix/suffix.';
 
-  try {
-    console.log('🧠 Step 1: Sending unified prompt to self-hosted Qwen2.5-Coder 3B...');
+  // 3. Step 1: Mapping affected files
+  console.log('\n🧠 Step 1: Mapping backend changes to relevant frontend files...');
 
-    const unifiedPrompt = `
+  const catalogText = catalog.map(item => `- Path: ${item.relativePath}\n  Description: ${item.description}`).join('\n');
+  const mappingPrompt = `
+You are a highly analytical AI developer and GraphQL consistency auditor.
+We have detected changes in the backend GraphQL Schema and Resolvers.
+Your task is to identify which frontend files from the catalog could be affected by these backend changes and must be inspected for semantic drift or breaks.
+
+=== 1. Backend GraphQL Schema DIFF ===
+${schemaDiff || '(No changes)'}
+
+=== 2. Backend API Resolvers DIFF ===
+${resolversDiff || '(No changes)'}
+
+=== 3. Frontend Files Catalog ===
+${catalogText}
+
+Review the diffs carefully. Any files in the frontend catalog that deal with user profiles, transaction updates, tiers, credits, dashboard page views, or GraphQL operations that are related to the modified backend fields or types MUST be reviewed.
+For example:
+- If a resolver/schema changes how user tiers or credits are evaluated/returned, select files related to ledger state, user lists, forms, styles, history, or operations.
+- If no files are affected, return an empty list.
+
+Return your output ONLY as a valid JSON object matching this TypeScript interface:
+interface FileMappingReport {
+  thinking: string; // Detail your reasoning for selecting or skipping each file.
+  relevant_files: string[]; // Relative paths from the catalog that are affected and must be reviewed.
+}
+`;
+
+  let selectedFiles: string[] = [];
+  try {
+    const mappingResponse = await callOllama([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: mappingPrompt }
+    ], 800);
+
+    const mappingReport = JSON.parse(mappingResponse);
+    selectedFiles = mappingReport.relevant_files || [];
+
+    console.log('\n🧠 Step 1 Mapping Reason:');
+    console.log('------------------------------------------');
+    console.log(mappingReport.thinking);
+    console.log('------------------------------------------');
+    console.log(`🎯 Relevant files mapped: [${selectedFiles.join(', ')}]`);
+  } catch (err: any) {
+    console.warn('⚠️ Step 1 (Mapping) failed or timed out:', err.message);
+    // Fallback: use all catalog files as fallback so we don't skip check
+    console.log('⚠️ Falling back to checking all frontend files.');
+    selectedFiles = catalog.map(item => item.relativePath);
+  }
+
+  const selectedItems = catalog.filter(item => selectedFiles.includes(item.relativePath));
+  if (selectedItems.length === 0) {
+    console.log('✅ AI model determined that no frontend files are affected by this backend change. Passing.');
+    process.exit(0);
+  }
+
+  // 4. Read selected files
+  let frontendCodesText = '';
+  for (const item of selectedItems) {
+    if (fs.existsSync(item.fullPath)) {
+      let code = fs.readFileSync(item.fullPath, 'utf8');
+      // clean imports to save context window
+      code = code.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, '');
+      frontendCodesText += `\n=== File: ${item.relativePath} ===\n${code}\n`;
+    }
+  }
+
+  // 5. Step 2: Audit
+  console.log('\n🧠 Step 2: Running audit on selected files...');
+  const auditPrompt = `
 You are an extremely strict AI code reviewer and GraphQL consistency auditor.
 Your job is to catch SEMANTIC DRIFT and FUNCTIONALITY BREAKS between the backend and frontend.
 
 CRITICAL INSTRUCTIONS:
 1. Look at the API Resolvers DIFF and Schema DIFF. Identify any fields whose underlying data format, semantic meaning, or type has changed (e.g., a field now returning stringified JSON, raw HTML, or a different object structure, even if it still technically returns a "String").
-2. If semantic changes exist, look at the Frontend Page Code. Examine EXACTLY HOW the frontend renders those specific fields.
+2. If semantic changes exist, look at the selected Frontend Code files below. Examine EXACTLY HOW the frontend renders those specific fields.
    - Look for how the changed fields are used in JSX (e.g., inside \`<a href={...}>\`, as image sources, or directly rendered as text \`{...}\`).
    - Determine if the new data format from the backend will break the frontend rendering (e.g., an object passed to an \`href\`, or HTML rendered as escaped text).
 3. If the frontend lacks mitigating logic (e.g. \`JSON.parse()\` or \`dangerouslySetInnerHTML\`) to handle the new format, you MUST output status: "FAIL". Do NOT assume the frontend handles backend changes automatically.
@@ -99,11 +248,8 @@ ${schemaDiff || '(No changes)'}
 === 2. API Resolvers DIFF ===
 ${resolversDiff || '(No changes)'}
 
-=== 3. Frontend GraphQL Operations ===
-${fileContents['GraphQL Operations']}
-
-=== 4. Frontend Page Code ===
-${fileContents['Frontend Page']}
+=== 3. Selected Frontend Codes ===
+${frontendCodesText || '(No files selected)'}
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
@@ -122,34 +268,13 @@ interface AuditReport {
 }
 `;
 
-    const messages = [
+  try {
+    const auditResponse = await callOllama([
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: unifiedPrompt }
-    ];
+      { role: 'user', content: auditPrompt }
+    ], 1200);
 
-    const response = await fetch('http://localhost:11434/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(300000), // Reduced timeout to 5 mins
-      body: JSON.stringify({
-        model: 'qwen2.5-coder:3b',
-        messages: messages,
-        stream: false,
-        format: 'json', // ✨ Forces Ollama to output valid JSON
-        options: {
-          temperature: 0.1,
-          num_predict: 1200
-        },
-      }),
-    });
-
-    if (!response.ok) throw new Error(`Ollama API responded with status ${response.status}`);
-    const data = (await response.json()) as any;
-    const rawContent = data.message?.content?.trim() || '';
-
-    // Sanitize JSON
-    let cleanJson = rawContent.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
-    const report = JSON.parse(cleanJson);
+    const report = JSON.parse(auditResponse);
 
     console.log('\n==========================================');
     console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');

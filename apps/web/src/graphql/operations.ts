@@ -1,3 +1,6 @@
+/**
+ * Description: Defines the GraphQL queries and mutations (GET_USER, CREATE_USER, GET_USERS, TRANSFER_CREDITS, ADD_CREDITS) utilized by the frontend hooks and components to communicate with Fastify GraphQL backend.
+ */
 import { gql } from '@apollo/client';
 
 export const GET_USER = gql`
