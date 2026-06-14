@@ -6,31 +6,17 @@ function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
     if (isCI) {
-      // GitHub Actions provides the base ref (e.g., 'main')
-      const baseRef = process.env.GITHUB_BASE_REF || 'main';
-      const remoteBase = baseRef.startsWith('origin/') ? baseRef : `origin/${baseRef}`;
-
       try {
-        // Try to fetch the target branch to fix shallow clone errors (fetch-depth: 1)
-        execSync(`git fetch origin ${baseRef.replace('origin/', '')} --depth=1`, { stdio: 'ignore' });
+        // Ensure at least depth of 2 is fetched so HEAD~1 is available
+        execSync('git fetch --depth=2', { stdio: 'ignore' });
       } catch (e) {
         // Ignore fetch errors
       }
-
-      try {
-        return execSync(`git diff ${remoteBase}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
-      } catch (e) {
-        // Fallback if the remoteBase is still not found
-        return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
-      }
+      return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
     }
 
-    // Local fallback
-    let diff = execSync(`git diff HEAD -- "${filePath}"`, { encoding: 'utf8' });
-    if (!diff.trim()) {
-      diff = execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
-    }
-    return diff;
+    // Local: look at the staged changes
+    return execSync(`git diff --cached -- "${filePath}"`, { encoding: 'utf8' });
   } catch (e) {
     console.warn(`⚠️ Could not get git diff for ${filePath}`);
     return '';
@@ -108,6 +94,7 @@ async function callOllama(messages: Array<{ role: string; content: string }>, nu
       format: 'json', // Forces Ollama to output valid JSON
       options: {
         temperature: 0.1,
+        num_ctx: 16384,
         num_predict: numPredict
       },
     }),
@@ -155,6 +142,98 @@ interface FileDescriptionReport {
   }
 }
 
+function resolveImportPath(sourceFile: string, importPath: string, srcDir: string): string | null {
+  let resolved: string;
+  if (importPath.startsWith('@/') || importPath.startsWith('~/')) {
+    resolved = path.resolve(srcDir, importPath.slice(2));
+  } else if (importPath.startsWith('.') || importPath.startsWith('/')) {
+    resolved = path.resolve(path.dirname(sourceFile), importPath);
+  } else {
+    return null;
+  }
+
+  const extensions = ['.ts', '.tsx', '.js', '.jsx'];
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+    return resolved;
+  }
+  for (const ext of extensions) {
+    const fileWithExt = resolved + ext;
+    if (fs.existsSync(fileWithExt) && fs.statSync(fileWithExt).isFile()) {
+      return fileWithExt;
+    }
+    const indexWithExt = path.join(resolved, 'index' + ext);
+    if (fs.existsSync(indexWithExt) && fs.statSync(indexWithExt).isFile()) {
+      return indexWithExt;
+    }
+  }
+  return null;
+}
+
+function getImportsForFile(filePath: string, srcDir: string): string[] {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const imports: string[] = [];
+    
+    // Regex for ES import statements, e.g. import ... from '...' or import('...')
+    const importRegex = /from\s+['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = importRegex.exec(content)) !== null) {
+      const importPath = match[1];
+      const resolved = resolveImportPath(filePath, importPath, srcDir);
+      if (resolved) {
+        imports.push(resolved);
+      }
+    }
+    return imports;
+  } catch (e) {
+    return [];
+  }
+}
+
+function resolveDependenciesRecursively(initialFiles: string[], srcDir: string, catalog: Array<{ fullPath: string; relativePath: string }>): string[] {
+  const visited = new Set<string>();
+  const queue = [...initialFiles];
+  
+  // Build a map of file path -> list of files it imports
+  const importMap = new Map<string, string[]>();
+  // Build a map of file path -> list of files that import it
+  const importerMap = new Map<string, string[]>();
+  
+  for (const item of catalog) {
+    const imports = getImportsForFile(item.fullPath, srcDir);
+    importMap.set(item.fullPath, imports);
+    for (const imp of imports) {
+      const currentImporters = importerMap.get(imp) || [];
+      currentImporters.push(item.fullPath);
+      importerMap.set(imp, currentImporters);
+    }
+  }
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    
+    // 1. Trace downwards (files this file imports)
+    const imports = importMap.get(current) || [];
+    for (const imp of imports) {
+      if (!visited.has(imp) && (imp.startsWith(srcDir.replace(/\\/g, '/')) || imp.startsWith(srcDir))) {
+        queue.push(imp);
+      }
+    }
+    
+    // 2. Trace upwards (files that import this file)
+    const importers = importerMap.get(current) || [];
+    for (const imp of importers) {
+      if (!visited.has(imp) && (imp.startsWith(srcDir.replace(/\\/g, '/')) || imp.startsWith(srcDir))) {
+        queue.push(imp);
+      }
+    }
+  }
+  
+  return Array.from(visited);
+}
+
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
 
@@ -164,6 +243,11 @@ async function main() {
   // 1. Get backend changes
   const schemaDiff = getGitDiff(schemaPath);
   const resolversDiff = getGitDiff(resolversPath);
+
+  console.log('\n--- 🔍 Backend Diff Debug Logs ---');
+  console.log(`Schema Diff:\n${schemaDiff.trim() ? schemaDiff : '(No changes)'}`);
+  console.log(`Resolvers Diff:\n${resolversDiff.trim() ? resolversDiff : '(No changes)'}`);
+  console.log('----------------------------------\n');
 
   if (!schemaDiff.trim() && !resolversDiff.trim()) {
     console.log('✅ No backend changes detected in Schema or Resolvers. Skipping AI inspection.');
@@ -271,11 +355,16 @@ interface FileMappingReport {
     const mappingReport = JSON.parse(mappingResponse);
     selectedFiles = mappingReport.relevant_files || [];
 
+    // Programmatically trace imports recursively for the selected files to find all related business logic/definitions
+    const absoluteSelectedFiles = selectedFiles.map(relPath => path.resolve(srcDir, relPath));
+    const allResolvedFiles = resolveDependenciesRecursively(absoluteSelectedFiles, srcDir, catalog);
+    selectedFiles = allResolvedFiles.map(absPath => path.relative(srcDir, absPath).replace(/\\/g, '/'));
+
     console.log('\n🧠 Step 1 Mapping Reason:');
     console.log('------------------------------------------');
     console.log(mappingReport.thinking);
     console.log('------------------------------------------');
-    console.log(`🎯 Relevant files mapped: [${selectedFiles.join(', ')}]`);
+    console.log(`🎯 Relevant files mapped (including resolved imports): [${selectedFiles.join(', ')}]`);
   } catch (err: any) {
     console.warn('⚠️ Step 1 (Mapping) failed or timed out:', err.message);
     // Fallback: use all catalog files as fallback so we don't skip check
@@ -304,14 +393,13 @@ interface FileMappingReport {
   console.log('\n🧠 Step 2: Running audit on selected files...');
   const auditPrompt = `
 You are an extremely strict AI code reviewer and GraphQL consistency auditor.
-Your job is to catch SEMANTIC DRIFT and FUNCTIONALITY BREAKS between the backend and frontend.
+Your job is to catch SEMANTIC DRIFT, BUSINESS LOGIC MISMATCHES, and FUNCTIONALITY BREAKS between the backend and frontend.
 
 CRITICAL INSTRUCTIONS:
-1. Look at the API Resolvers DIFF and Schema DIFF. Identify any fields whose underlying data format, semantic meaning, or type has changed (e.g., a field now returning stringified JSON, raw HTML, or a different object structure, even if it still technically returns a "String").
-2. If semantic changes exist, look at the selected Frontend Code files below. Examine EXACTLY HOW the frontend renders those specific fields.
-   - Look for how the changed fields are used in JSX (e.g., inside \`<a href={...}>\`, as image sources, or directly rendered as text \`{...}\`).
-   - Determine if the new data format from the backend will break the frontend rendering (e.g., an object passed to an \`href\`, or HTML rendered as escaped text).
-3. If the frontend lacks mitigating logic (e.g. \`JSON.parse()\` or \`dangerouslySetInnerHTML\`) to handle the new format, you MUST output status: "FAIL". Do NOT assume the frontend handles backend changes automatically.
+1. Look at the API Resolvers DIFF and Schema DIFF. Identify ANY changes in types, formats, values, constants, equations, thresholds, error conditions, or business rules (such as transaction fees, credit limits, or loyalty tier thresholds).
+2. Compare these changes against the selected Frontend Code files. Check if the frontend code makes hardcoded assumptions or uses separate local calculations/constants for these same business rules, constants, or values (e.g., check for hardcoded fee percentages, limits, or tier equations).
+3. If there is ANY discrepancy between what the backend resolves/calculates/validates and what the frontend expects, calculates, or displays (e.g., if the backend changes a fee rate or limit equation but the frontend still hardcodes or uses conflicting local logic/percentages), this is a CRITICAL FUNCTIONAL MISMATCH.
+4. If the frontend lacks mitigating logic to handle the updated backend rules or data formats, or has conflicting logic (e.g., hardcoded tier fees that differ from the new backend resolver rates), you MUST output status: "FAIL". Do NOT assume the frontend handles changes automatically.
 
 === 1. GraphQL Schema DIFF ===
 ${schemaDiff || '(No changes)'}
@@ -324,7 +412,7 @@ ${frontendCodesText || '(No files selected)'}
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
-  thinking: string; // Detail exactly how the fields are returned by the resolvers and how they are consumed in the frontend JSX.
+  thinking: string; // Step-by-step description of your analysis, comparing backend resolver changes/constants/rules with frontend code usage/constants/formulas.
   status: "PASS" | "WARN" | "FAIL";
   backend_changes_summary: string;
   findings: Array<{
@@ -332,7 +420,7 @@ interface AuditReport {
     level: "error" | "warning";
     description: string;
     suggestion: string;
-    frontend_snippet?: string; // Provide the exact snippet of frontend code that would break.
+    frontend_snippet?: string; // Provide the exact snippet of frontend code that would break or is inconsistent.
     backend_diff_snippet?: string; // Provide the exact snippet of backend diff that caused the issue.
   }>;
   explanation: string;
