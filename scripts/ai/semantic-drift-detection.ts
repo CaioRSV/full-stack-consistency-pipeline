@@ -6,6 +6,7 @@ interface AIConfig {
   maxDependencyDepth: number;
   exitOnFailure: boolean;
   skipMapping: boolean;
+  timeoutMs: number;
 }
 
 function loadConfig(): AIConfig {
@@ -14,6 +15,7 @@ function loadConfig(): AIConfig {
     maxDependencyDepth: 1,
     exitOnFailure: false,
     skipMapping: false,
+    timeoutMs: 900000, // Default 15 minutes
   };
 
   let config = defaultConfig;
@@ -31,6 +33,14 @@ function loadConfig(): AIConfig {
   const args = process.argv.slice(2);
   if (args.includes('--skip-mapping') || args.includes('--skipMapping')) {
     config.skipMapping = true;
+  }
+
+  const timeoutIdx = args.findIndex(arg => arg === '--timeout');
+  if (timeoutIdx !== -1 && timeoutIdx + 1 < args.length) {
+    const val = parseInt(args[timeoutIdx + 1], 10);
+    if (!isNaN(val)) {
+      config.timeoutMs = val;
+    }
   }
 
   return config;
@@ -116,11 +126,11 @@ function getFileDescription(filePath: string): string {
   }
 }
 
-async function callOllama(messages: Array<{ role: string; content: string }>, numPredict = 1200): Promise<string> {
+async function callOllama(messages: Array<{ role: string; content: string }>, numPredict = 1200, timeoutMs = 900000): Promise<string> {
   const response = await fetch('http://localhost:11434/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(300000), // 5 min timeout
+    signal: AbortSignal.timeout(timeoutMs), // configurable timeout
     body: JSON.stringify({
       model: 'qwen2.5-coder:3b',
       messages: messages,
@@ -280,7 +290,7 @@ function resolveDependenciesRecursively(
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
   const config = loadConfig();
-  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}, skipMapping = ${config.skipMapping}`);
+  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}, skipMapping = ${config.skipMapping}, timeoutMs = ${config.timeoutMs}`);
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
   const resolversPath = path.resolve(__dirname, '../../apps/api/src/resolvers/user.ts');
@@ -489,7 +499,7 @@ interface AuditReport {
     const auditResponse = await callOllama([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: auditPrompt }
-    ], 1200);
+    ], 1200, config.timeoutMs);
 
     const report = JSON.parse(auditResponse);
 

@@ -1,5 +1,6 @@
 {
   "maxDependencyDepth": 1,
   "exitOnFailure": false,
-  "skipMapping": false
+  "skipMapping": true,
+  "timeoutMs": 900000
 }
