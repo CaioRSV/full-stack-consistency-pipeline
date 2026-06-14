@@ -22,7 +22,7 @@ interface UserListProps {
   onSelectUser: (id: string) => void;
   onAddCredits: (userId: string, amount: number) => Promise<void>;
   addLoading: boolean;
-  onRefetchList: () => any;
+  onRefetchList: () => Promise<unknown>;
 }
 
 export function UserList({

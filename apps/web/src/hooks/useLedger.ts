@@ -16,6 +16,15 @@ export interface NotificationState {
   type: 'success' | 'error' | 'info';
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  balance: number;
+  totalSent: number;
+  tier: string;
+}
+
 export function useLedger() {
   const [selectedUserForHistory, setSelectedUserForHistory] = useState<string>('1');
   const [senderId, setSenderId] = useState<string>('');
@@ -33,7 +42,7 @@ export function useLedger() {
     loading: listLoading,
     error: listError,
     refetch: refetchList,
-  } = useQuery(GET_USERS);
+  } = useQuery<{ users: User[] }>(GET_USERS);
 
   // 2. Fetch selected user history details
   const {
@@ -93,8 +102,8 @@ export function useLedger() {
         setInputEmail('');
         refetchList();
       }
-    } catch (err: any) {
-      showNotification(err.message, 'error');
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : String(err), 'error');
     }
   };
 
@@ -113,8 +122,8 @@ export function useLedger() {
           refetchUser();
         }
       }
-    } catch (err: any) {
-      showNotification(err.message, 'error');
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : String(err), 'error');
     }
   };
 
@@ -140,7 +149,7 @@ export function useLedger() {
         await refetchUser();
 
         // Check if there was a tier upgrade by comparing with state
-        const senderBefore = listData?.users?.find((u: any) => u.id === senderId);
+        const senderBefore = listData?.users?.find((u: User) => u.id === senderId);
         let msg = `Transferência de $${amount.toFixed(2)} enviada! Taxa: $${tx.fee.toFixed(2)}.`;
 
         if (senderBefore && senderAfter && senderBefore.tier !== senderAfter.tier) {
@@ -152,14 +161,14 @@ export function useLedger() {
 
         setTransferAmount('');
       }
-    } catch (err: any) {
-      showNotification(err.message, 'error');
+    } catch (err) {
+      showNotification(err instanceof Error ? err.message : String(err), 'error');
     }
   };
 
   // Find active users details for live calculations in the form
-  const activeSender = listData?.users?.find((u: any) => u.id === senderId);
-  const activeReceiver = listData?.users?.find((u: any) => u.id === receiverId);
+  const activeSender = listData?.users?.find((u: User) => u.id === senderId);
+  const activeReceiver = listData?.users?.find((u: User) => u.id === receiverId);
 
   // Live rules preview based on sender's tier
   let feePercentage = 5;
