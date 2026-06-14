@@ -29,7 +29,7 @@ const users: DbUser[] = [
     website: 'https://alice.dev',
     bio: 'Software engineer and open source contributor.',
     createdAt: '2026-01-01T00:00:00.000Z',
-    balance: 100.0,
+    balance: 500.0,
     tier: UserTier.Bronze,
   },
   {
@@ -39,7 +39,7 @@ const users: DbUser[] = [
     website: 'https://bobsmith.com',
     bio: 'Product manager and designer.',
     createdAt: '2026-02-15T00:00:00.000Z',
-    balance: 100.0,
+    balance: 500.0,
     tier: UserTier.Bronze,
   },
 ];

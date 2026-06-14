@@ -1,7 +1,7 @@
 /**
  * Description: Renders the transaction simulator form. Provides selectors for sender/receiver, input for transfer amount, and computes live previews of fee percentages, limits, and total costs based on the sender's loyalty tier constraints.
  */
-import React from 'react';
+import React, { useState } from 'react';
 
 interface User {
   id: string;
@@ -51,6 +51,9 @@ export function TransferForm({
   isOverLimit,
   isInsufficient,
 }: TransferFormProps) {
+
+  const [bypassLimiter, setBypassLimiter] = useState<boolean>(false);
+
   return (
     <section className="glass-panel">
       <h2>Simular Transferência (Ledger Engine)</h2>
@@ -178,12 +181,29 @@ export function TransferForm({
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={transferLoading || isOverLimit || isInsufficient || !senderId || !receiverId || enteredAmount <= 0}
-        >
-          {transferLoading ? 'Processando Ledger...' : 'Executar Transferência'}
-        </button>
+        <div style={{
+          display: "flex",
+          gap: "5px",
+          flexDirection: "column",
+        }}>
+          <button
+            type="submit"
+            disabled={transferLoading || (isOverLimit && !bypassLimiter) || isInsufficient || !senderId || !receiverId || enteredAmount <= 0}
+          >
+            {transferLoading ? 'Processando Ledger...' : 'Executar Transferência'}
+          </button>
+
+          <button
+            style={{
+              opacity: 0.5,
+              display: isOverLimit && !(isInsufficient || !senderId || !receiverId || enteredAmount <= 0) ? 'block' : 'none',
+            }}
+            type="button"
+            onClick={() => setBypassLimiter(!bypassLimiter)}
+          >
+            Ignorar regra de limites
+          </button>
+        </div>
       </form>
     </section>
   );
