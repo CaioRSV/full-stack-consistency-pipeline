@@ -1,0 +1,15 @@
+{
+  "app/layout.tsx": "Renders the root HTML layout, global CSS loading, and wraps the application in the GraphQL/Apollo Provider.",
+  "app/page.tsx": "The `Home` component is the main layout page for the Web app Dashboard, integrating components for User List, Transfer simulator, transaction history logs, and user creation form. It uses the `useLedger` hook to manage state related to ledger operations.",
+  "components/CreateUserForm.tsx": "Renders a simple registration form for creating new user profiles with default BRONZE tier and $100 starting balance.",
+  "components/Header.tsx": "Renders the web app header with a title and a live server connection status indicator badge, indicating if the GraphQL API is online or offline.",
+  "components/Notification.tsx": "Renders absolute positioned floating pop-up/toast notification banners displaying status alerts for ledger updates.",
+  "components/TransactionHistory.tsx": "Renders the transaction history table and logs for a selected user account, displaying transfers, reward bonuses, and system credits with directional signs (+/-) and tier-based color formatting.",
+  "components/TransferForm.tsx": "Renders the transaction simulator form for users to input sender and receiver details, transfer amount, and view live previews of fee percentages, limits, and total costs based on the sender's loyalty tier constraints.",
+  "components/UserList.tsx": "Renders a grid of user accounts with details such as ID, email, balance, total money sent, and loyalty tier badge. It includes quick buttons to award +$50 or +$200 credit mutations.",
+  "graphql/client.ts": "Configures and initializes the Apollo Client instance connected to the GraphQL API endpoint.",
+  "graphql/operations.ts": "Defines GraphQL queries and mutations for user management and transactions in a React frontend application.",
+  "graphql/provider.tsx": "Wraps the React application context in ApolloProvider for GraphQL operation availability.",
+  "hooks/useLedger.ts": "Manages user and credit operations using Apollo client for GraphQL queries and mutations, providing UI notifications and live calculations based on user tiers.",
+  "utils/styleHelpers.ts": "Provides utility functions to return specific CSS styles, background colors, borders, and text labels for user loyalty tiers and transaction types."
+}

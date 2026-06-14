@@ -122,6 +122,39 @@ async function callOllama(messages: Array<{ role: string; content: string }>, nu
   return rawContent.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
 }
 
+async function generateFileDescription(filePath: string, relativePath: string): Promise<string> {
+  try {
+    const code = fs.readFileSync(filePath, 'utf8');
+    const userPrompt = `
+Analyze the following TypeScript/React frontend file code and provide a brief, high-level summary of its purpose in 1 to 2 sentences.
+Be specific about what features, components, state, or utility it implements.
+
+=== File Path ===
+${relativePath}
+
+=== Code ===
+${code}
+
+Return your output ONLY as a valid JSON object matching this TypeScript interface:
+interface FileDescriptionReport {
+  purpose: string; // 1-2 sentence description of the file's purpose.
+}
+`;
+
+    const systemPrompt = 'You are an AI code analyst. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like \`\`\`json), or conversational prefix/suffix.';
+    const response = await callOllama([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], 200);
+
+    const report = JSON.parse(response);
+    return report.purpose || getFileDescription(filePath);
+  } catch (err: any) {
+    console.warn(`⚠️ Failed to generate AI description for ${relativePath}: ${err.message}. Falling back to header comments.`);
+    return getFileDescription(filePath);
+  }
+}
+
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
 
@@ -143,9 +176,47 @@ async function main() {
   const srcDir = path.resolve(__dirname, '../../apps/web/src');
   const allFiles = getFilesRecursively(srcDir);
 
+  const descriptionsPath = path.resolve(__dirname, 'file-descriptions.json');
+  let descriptions: Record<string, string> = {};
+  try {
+    if (fs.existsSync(descriptionsPath)) {
+      descriptions = JSON.parse(fs.readFileSync(descriptionsPath, 'utf8'));
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Could not read file-descriptions.json. Initializing empty descriptions.', err.message);
+  }
+
+  let descriptionsUpdated = false;
+
+  for (const filePath of allFiles) {
+    const relativePath = path.relative(srcDir, filePath).replace(/\\/g, '/');
+    const hasDiff = getGitDiff(filePath).trim().length > 0;
+    const isNew = !descriptions[relativePath];
+
+    if (isNew || hasDiff) {
+      if (isNew) {
+        console.log(`🆕 New file detected: ${relativePath}. Generating description...`);
+      } else {
+        console.log(`📝 Modified file detected: ${relativePath}. Updating description...`);
+      }
+      const newDesc = await generateFileDescription(filePath, relativePath);
+      descriptions[relativePath] = newDesc;
+      descriptionsUpdated = true;
+    }
+  }
+
+  if (descriptionsUpdated) {
+    try {
+      fs.writeFileSync(descriptionsPath, JSON.stringify(descriptions, null, 2), 'utf8');
+      console.log('💾 Saved updated file descriptions to file-descriptions.json');
+    } catch (err: any) {
+      console.warn('⚠️ Could not save file-descriptions.json:', err.message);
+    }
+  }
+
   const catalog = allFiles.map(filePath => {
     const relativePath = path.relative(srcDir, filePath).replace(/\\/g, '/');
-    const description = getFileDescription(filePath);
+    const description = descriptions[relativePath] || 'No description provided.';
     return {
       relativePath,
       fullPath: filePath,
