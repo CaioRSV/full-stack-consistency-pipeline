@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, "merge/**" ]
+    branches: [ main, master, "merge/**", "feature/**" ]
   pull_request:
-    branches: [ main, master, "merge/**" ]
+    branches: [ main, master, "merge/**", "feature/**" ]
 
 jobs:
   validate:
