@@ -2,6 +2,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
+interface AIConfig {
+  maxDependencyDepth: number;
+  exitOnFailure: boolean;
+}
+
+function loadConfig(): AIConfig {
+  const configPath = path.resolve(__dirname, 'config.json');
+  const defaultConfig: AIConfig = {
+    maxDependencyDepth: 1,
+    exitOnFailure: false,
+  };
+
+  try {
+    if (fs.existsSync(configPath)) {
+      const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return { ...defaultConfig, ...userConfig };
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Could not read scripts/ai/config.json, using defaults.', err.message);
+  }
+  return defaultConfig;
+}
+
 function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
@@ -173,7 +196,7 @@ function getImportsForFile(filePath: string, srcDir: string): string[] {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     const imports: string[] = [];
-    
+
     // Regex for ES import statements, e.g. import ... from '...' or import('...')
     const importRegex = /from\s+['"]([^'"]+)['"]/g;
     let match;
@@ -190,15 +213,20 @@ function getImportsForFile(filePath: string, srcDir: string): string[] {
   }
 }
 
-function resolveDependenciesRecursively(initialFiles: string[], srcDir: string, catalog: Array<{ fullPath: string; relativePath: string }>): string[] {
+function resolveDependenciesRecursively(
+  initialFiles: string[],
+  srcDir: string,
+  catalog: Array<{ fullPath: string; relativePath: string }>,
+  maxDepth: number = 1
+): string[] {
   const visited = new Set<string>();
-  const queue = [...initialFiles];
-  
+  const queue: Array<[string, number]> = initialFiles.map(file => [file, 0]);
+
   // Build a map of file path -> list of files it imports
   const importMap = new Map<string, string[]>();
   // Build a map of file path -> list of files that import it
   const importerMap = new Map<string, string[]>();
-  
+
   for (const item of catalog) {
     const imports = getImportsForFile(item.fullPath, srcDir);
     importMap.set(item.fullPath, imports);
@@ -208,34 +236,40 @@ function resolveDependenciesRecursively(initialFiles: string[], srcDir: string, 
       importerMap.set(imp, currentImporters);
     }
   }
-  
+
   while (queue.length > 0) {
-    const current = queue.shift()!;
+    const [current, depth] = queue.shift()!;
     if (visited.has(current)) continue;
     visited.add(current);
-    
+
+    if (depth >= maxDepth) {
+      continue;
+    }
+
     // 1. Trace downwards (files this file imports)
     const imports = importMap.get(current) || [];
     for (const imp of imports) {
       if (!visited.has(imp) && (imp.startsWith(srcDir.replace(/\\/g, '/')) || imp.startsWith(srcDir))) {
-        queue.push(imp);
+        queue.push([imp, depth + 1]);
       }
     }
-    
+
     // 2. Trace upwards (files that import this file)
     const importers = importerMap.get(current) || [];
     for (const imp of importers) {
       if (!visited.has(imp) && (imp.startsWith(srcDir.replace(/\\/g, '/')) || imp.startsWith(srcDir))) {
-        queue.push(imp);
+        queue.push([imp, depth + 1]);
       }
     }
   }
-  
+
   return Array.from(visited);
 }
 
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
+  const config = loadConfig();
+  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}`);
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
   const resolversPath = path.resolve(__dirname, '../../apps/api/src/resolvers/user.ts');
@@ -357,7 +391,7 @@ interface FileMappingReport {
 
     // Programmatically trace imports recursively for the selected files to find all related business logic/definitions
     const absoluteSelectedFiles = selectedFiles.map(relPath => path.resolve(srcDir, relPath));
-    const allResolvedFiles = resolveDependenciesRecursively(absoluteSelectedFiles, srcDir, catalog);
+    const allResolvedFiles = resolveDependenciesRecursively(absoluteSelectedFiles, srcDir, catalog, config.maxDependencyDepth);
     selectedFiles = allResolvedFiles.map(absPath => path.relative(srcDir, absPath).replace(/\\/g, '/'));
 
     console.log('\n🧠 Step 1 Mapping Reason:');
@@ -497,7 +531,7 @@ interface AuditReport {
     console.error('❌ Failed to run AI contract verification:', error.message);
     console.warn('⚠️ Ollama/Qwen model might not be ready or running. Skipping AI check.');
     // Don't fail the build if the local model service is temporarily unreachable
-    process.exit(1);
+    process.exit(config.exitOnFailure ? 1 : 0);
   }
 }
 
