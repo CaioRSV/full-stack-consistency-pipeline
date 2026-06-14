@@ -55,4 +55,4 @@ jobs:
         run: pnpm -r typecheck
 
       - name: 🤖 3. AI-Assisted Contract Validation
-        run: npx ts-node scripts/ai/semantic-drift-detection.ts
+        run: npx ts-node scripts/ai/semantic-drift-detection.ts --skip-mapping

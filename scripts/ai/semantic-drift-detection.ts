@@ -5,6 +5,7 @@ import { execSync } from 'child_process';
 interface AIConfig {
   maxDependencyDepth: number;
   exitOnFailure: boolean;
+  skipMapping: boolean;
 }
 
 function loadConfig(): AIConfig {
@@ -12,17 +13,27 @@ function loadConfig(): AIConfig {
   const defaultConfig: AIConfig = {
     maxDependencyDepth: 1,
     exitOnFailure: false,
+    skipMapping: false,
   };
+
+  let config = defaultConfig;
 
   try {
     if (fs.existsSync(configPath)) {
       const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      return { ...defaultConfig, ...userConfig };
+      config = { ...defaultConfig, ...userConfig };
     }
   } catch (err: any) {
     console.warn('⚠️ Could not read scripts/ai/config.json, using defaults.', err.message);
   }
-  return defaultConfig;
+
+  // Override config if CLI flag is provided
+  const args = process.argv.slice(2);
+  if (args.includes('--skip-mapping') || args.includes('--skipMapping')) {
+    config.skipMapping = true;
+  }
+
+  return config;
 }
 
 function getGitDiff(filePath: string): string {
@@ -269,7 +280,7 @@ function resolveDependenciesRecursively(
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
   const config = loadConfig();
-  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}`);
+  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}, skipMapping = ${config.skipMapping}`);
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
   const resolversPath = path.resolve(__dirname, '../../apps/api/src/resolvers/user.ts');
@@ -312,12 +323,17 @@ async function main() {
     const isNew = !descriptions[relativePath];
 
     if (isNew || hasDiff) {
-      if (isNew) {
-        console.log(`🆕 New file detected: ${relativePath}. Generating description...`);
+      let newDesc = '';
+      if (config.skipMapping) {
+        newDesc = getFileDescription(filePath);
       } else {
-        console.log(`📝 Modified file detected: ${relativePath}. Updating description...`);
+        if (isNew) {
+          console.log(`🆕 New file detected: ${relativePath}. Generating description...`);
+        } else {
+          console.log(`📝 Modified file detected: ${relativePath}. Updating description...`);
+        }
+        newDesc = await generateFileDescription(filePath, relativePath);
       }
-      const newDesc = await generateFileDescription(filePath, relativePath);
       descriptions[relativePath] = newDesc;
       descriptionsUpdated = true;
     }
@@ -349,11 +365,16 @@ async function main() {
 
   const systemPrompt = 'You are an AI code reviewer and GraphQL consistency auditor. Always output pure, valid JSON matching the requested interface. Never include HTML, markdown wrappers (like ```json), or conversational prefix/suffix.';
 
-  // 3. Step 1: Mapping affected files
-  console.log('\n🧠 Step 1: Mapping backend changes to relevant frontend files...');
+  let selectedFiles: string[] = [];
+  if (config.skipMapping) {
+    console.log('\n⏭️ Skipping Step 1 (Mapping relevant files) due to skipMapping configuration. Auditing all frontend files directly.');
+    selectedFiles = catalog.map(item => item.relativePath);
+  } else {
+    // 3. Step 1: Mapping affected files
+    console.log('\n🧠 Step 1: Mapping backend changes to relevant frontend files...');
 
-  const catalogText = catalog.map(item => `- Path: ${item.relativePath}\n  Description: ${item.description}`).join('\n');
-  const mappingPrompt = `
+    const catalogText = catalog.map(item => `- Path: ${item.relativePath}\n  Description: ${item.description}`).join('\n');
+    const mappingPrompt = `
 You are a highly analytical AI developer and GraphQL consistency auditor.
 We have detected changes in the backend GraphQL Schema and Resolvers.
 Your task is to identify which frontend files from the catalog could be affected by these backend changes and must be inspected for semantic drift or breaks.
@@ -379,31 +400,31 @@ interface FileMappingReport {
 }
 `;
 
-  let selectedFiles: string[] = [];
-  try {
-    const mappingResponse = await callOllama([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: mappingPrompt }
-    ], 800);
+    try {
+      const mappingResponse = await callOllama([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: mappingPrompt }
+      ], 800);
 
-    const mappingReport = JSON.parse(mappingResponse);
-    selectedFiles = mappingReport.relevant_files || [];
+      const mappingReport = JSON.parse(mappingResponse);
+      selectedFiles = mappingReport.relevant_files || [];
 
-    // Programmatically trace imports recursively for the selected files to find all related business logic/definitions
-    const absoluteSelectedFiles = selectedFiles.map(relPath => path.resolve(srcDir, relPath));
-    const allResolvedFiles = resolveDependenciesRecursively(absoluteSelectedFiles, srcDir, catalog, config.maxDependencyDepth);
-    selectedFiles = allResolvedFiles.map(absPath => path.relative(srcDir, absPath).replace(/\\/g, '/'));
+      // Programmatically trace imports recursively for the selected files to find all related business logic/definitions
+      const absoluteSelectedFiles = selectedFiles.map(relPath => path.resolve(srcDir, relPath));
+      const allResolvedFiles = resolveDependenciesRecursively(absoluteSelectedFiles, srcDir, catalog, config.maxDependencyDepth);
+      selectedFiles = allResolvedFiles.map(absPath => path.relative(srcDir, absPath).replace(/\\/g, '/'));
 
-    console.log('\n🧠 Step 1 Mapping Reason:');
-    console.log('------------------------------------------');
-    console.log(mappingReport.thinking);
-    console.log('------------------------------------------');
-    console.log(`🎯 Relevant files mapped (including resolved imports): [${selectedFiles.join(', ')}]`);
-  } catch (err: any) {
-    console.warn('⚠️ Step 1 (Mapping) failed or timed out:', err.message);
-    // Fallback: use all catalog files as fallback so we don't skip check
-    console.log('⚠️ Falling back to checking all frontend files.');
-    selectedFiles = catalog.map(item => item.relativePath);
+      console.log('\n🧠 Step 1 Mapping Reason:');
+      console.log('------------------------------------------');
+      console.log(mappingReport.thinking);
+      console.log('------------------------------------------');
+      console.log(`🎯 Relevant files mapped (including resolved imports): [${selectedFiles.join(', ')}]`);
+    } catch (err: any) {
+      console.warn('⚠️ Step 1 (Mapping) failed or timed out:', err.message);
+      // Fallback: use all catalog files as fallback so we don't skip check
+      console.log('⚠️ Falling back to checking all frontend files.');
+      selectedFiles = catalog.map(item => item.relativePath);
+    }
   }
 
   const selectedItems = catalog.filter(item => selectedFiles.includes(item.relativePath));
