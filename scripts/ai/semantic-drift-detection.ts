@@ -397,9 +397,12 @@ Your job is to catch SEMANTIC DRIFT, BUSINESS LOGIC MISMATCHES, and FUNCTIONALIT
 
 CRITICAL INSTRUCTIONS:
 1. Look at the API Resolvers DIFF and Schema DIFF. Identify ANY changes in types, formats, values, constants, equations, thresholds, error conditions, or business rules (such as transaction fees, credit limits, or loyalty tier thresholds).
-2. Compare these changes against the selected Frontend Code files. Check if the frontend code makes hardcoded assumptions or uses separate local calculations/constants for these same business rules, constants, or values (e.g., check for hardcoded fee percentages, limits, or tier equations).
-3. If there is ANY discrepancy between what the backend resolves/calculates/validates and what the frontend expects, calculates, or displays (e.g., if the backend changes a fee rate or limit equation but the frontend still hardcodes or uses conflicting local logic/percentages), this is a CRITICAL FUNCTIONAL MISMATCH.
-4. If the frontend lacks mitigating logic to handle the updated backend rules or data formats, or has conflicting logic (e.g., hardcoded tier fees that differ from the new backend resolver rates), you MUST output status: "FAIL". Do NOT assume the frontend handles changes automatically.
+2. Look for subtle mathematical, syntax, or sign anomalies/typos in the backend changes (such as unexpected negative signs, e.g. "feePercentage: - feePercentagesDict[UserTier.Bronze]", division errors, or operator typos) that would make the configuration values semantically incorrect.
+3. Compare these changes against the selected Frontend Code files. Do not just fail blindly because the frontend has hardcoded values. Instead, check the underlying logic:
+   - Identify if the frontend could align if it fetched the configurations dynamically.
+   - If the backend configuration itself contains a semantic/mathematical error (like negative fee percentages due to a leading minus sign typo), this is the REAL error/mismatch that must be highlighted in the report, since it would propagate incorrect values to the frontend if implemented dynamically.
+4. If there is ANY discrepancy, typo, sign mismatch, or logical inconsistency between the backend calculations/configs and what the frontend calculates or displays, you MUST output status: "FAIL" and detail the exact mathematical/semantic anomaly.
+5. If the frontend lacks mitigating logic to handle the updated backend rules/formats, or has conflicting logic, you MUST output status: "FAIL". Do NOT assume the frontend handles changes automatically.
 
 === 1. GraphQL Schema DIFF ===
 ${schemaDiff || '(No changes)'}
