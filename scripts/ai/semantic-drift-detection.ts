@@ -207,7 +207,7 @@ async function callOllama(
   timeoutMs = 900000,
   numCtx = 12288
 ): Promise<string> {
-  const response = await fetch('http://localhost:11434/api/chat', {
+  const response = await fetch('http://127.0.0.1:11434/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(timeoutMs), // configurable timeout
