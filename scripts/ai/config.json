@@ -1,7 +1,7 @@
 {
-  "maxDependencyDepth": 1,
+  "maxDependencyDepth": 2,
   "exitOnFailure": false,
-  "skipMapping": true,
+  "skipMapping": false,
   "timeoutMs": 900000,
   "numCtx": 12288
 }

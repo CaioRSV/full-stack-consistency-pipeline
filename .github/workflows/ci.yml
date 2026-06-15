@@ -61,4 +61,4 @@ jobs:
           until curl -s http://127.0.0.1:11434 > /dev/null; do
             sleep 2
           done
-          npx ts-node scripts/ai/semantic-drift-detection.ts --skip-mapping
+          npx ts-node scripts/ai/semantic-drift-detection.ts
