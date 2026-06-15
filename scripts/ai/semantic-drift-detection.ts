@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
 import { execSync } from 'child_process';
 
 interface AIConfig {
@@ -201,34 +202,72 @@ function getFileDescription(filePath: string): string {
   }
 }
 
+function postRequest(url: string, body: any, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const postData = JSON.stringify(body);
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+      timeout: timeoutMs,
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(`Ollama API responded with status ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('The operation was aborted due to timeout'));
+    });
+
+    req.on('error', (e) => {
+      reject(e);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 async function callOllama(
   messages: Array<{ role: string; content: string }>,
   numPredict = 1200,
   timeoutMs = 900000,
   numCtx = 12288
 ): Promise<string> {
-  const response = await fetch('http://127.0.0.1:11434/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(timeoutMs), // configurable timeout
-    body: JSON.stringify({
-      model: 'qwen2.5-coder:3b',
-      messages: messages,
-      stream: false,
-      format: 'json', // Forces Ollama to output valid JSON
-      options: {
-        temperature: 0.1,
-        num_ctx: numCtx,
-        num_predict: numPredict
-      },
-    }),
-  });
+  const requestBody = {
+    model: 'qwen2.5-coder:3b',
+    messages: messages,
+    stream: false,
+    format: 'json', // Forces Ollama to output valid JSON
+    options: {
+      temperature: 0.1,
+      num_ctx: numCtx,
+      num_predict: numPredict
+    },
+  };
 
-  if (!response.ok) {
-    throw new Error(`Ollama API responded with status ${response.status}`);
-  }
-
-  const data = (await response.json()) as any;
+  const responseText = await postRequest('http://127.0.0.1:11434/api/chat', requestBody, timeoutMs);
+  const data = JSON.parse(responseText) as any;
   const rawContent = data.message?.content?.trim() || '';
   return rawContent.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
 }

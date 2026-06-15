@@ -42,7 +42,7 @@ jobs:
           curl -fsSL https://ollama.com/install.sh | sh
           nohup ollama serve > ollama.log 2>&1 &
           echo "Waiting for Ollama to start..."
-          until curl -s http://localhost:11434 > /dev/null; do
+          until curl -s http://127.0.0.1:11434 > /dev/null; do
             sleep 2
           done
           echo "Ollama is running. Pulling qwen2.5-coder:3b..."
@@ -55,4 +55,10 @@ jobs:
         run: pnpm -r typecheck
 
       - name: 🤖 3. AI-Assisted Contract Validation
-        run: npx ts-node scripts/ai/semantic-drift-detection.ts --skip-mapping
+        run: |
+          nohup ollama serve > ollama.log 2>&1 &
+          echo "Waiting for Ollama to start..."
+          until curl -s http://127.0.0.1:11434 > /dev/null; do
+            sleep 2
+          done
+          npx ts-node scripts/ai/semantic-drift-detection.ts --skip-mapping
