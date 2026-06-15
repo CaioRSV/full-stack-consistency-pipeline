@@ -7,6 +7,72 @@ interface AIConfig {
   exitOnFailure: boolean;
   skipMapping: boolean;
   timeoutMs: number;
+  numCtx: number;
+}
+
+function cleanCodeForContext(code: string): string {
+  const lines = code.replace(/\r\n/g, '\n').split('\n');
+  const cleanedLines: string[] = [];
+  let inBlockComment = false;
+  let inMultiLineImport = false;
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+
+    // Handle block comments
+    if (inBlockComment) {
+      if (trimmed.endsWith('*/')) {
+        inBlockComment = false;
+      }
+      continue;
+    }
+    if (trimmed.startsWith('/*')) {
+      if (!trimmed.endsWith('*/')) {
+        inBlockComment = true;
+      }
+      continue;
+    }
+
+    // Handle single line comments
+    if (trimmed.startsWith('//')) {
+      continue;
+    }
+
+    // Handle multi-line imports
+    if (inMultiLineImport) {
+      if (trimmed.includes('from ') || trimmed.includes("from'")) {
+        inMultiLineImport = false;
+      }
+      continue;
+    }
+    if (trimmed.startsWith('import ')) {
+      // Check if it's single line
+      const isSingleLine = (trimmed.includes('from ') && (trimmed.endsWith("';") || trimmed.endsWith('";') || trimmed.endsWith("'") || trimmed.endsWith('"'))) ||
+                           (trimmed.startsWith('import \'') || trimmed.startsWith('import "'));
+      if (!isSingleLine) {
+        inMultiLineImport = true;
+      }
+      continue;
+    }
+
+    // Strip trailing comments
+    let processedLine = line;
+    const commentIdx = line.indexOf('//');
+    if (commentIdx !== -1) {
+      const prefix = line.substring(0, commentIdx);
+      if (!prefix.trim().endsWith(':')) {
+        processedLine = prefix;
+      }
+    }
+
+    if (processedLine.trim() === '') {
+      continue;
+    }
+
+    cleanedLines.push(processedLine);
+  }
+
+  return cleanedLines.join('\n');
 }
 
 function loadConfig(): AIConfig {
@@ -16,6 +82,7 @@ function loadConfig(): AIConfig {
     exitOnFailure: false,
     skipMapping: false,
     timeoutMs: 900000, // Default 15 minutes
+    numCtx: 12288, // Default 12k context window to save RAM
   };
 
   let config = defaultConfig;
@@ -40,6 +107,14 @@ function loadConfig(): AIConfig {
     const val = parseInt(args[timeoutIdx + 1], 10);
     if (!isNaN(val)) {
       config.timeoutMs = val;
+    }
+  }
+
+  const numCtxIdx = args.findIndex(arg => arg === '--num-ctx' || arg === '--numCtx');
+  if (numCtxIdx !== -1 && numCtxIdx + 1 < args.length) {
+    const val = parseInt(args[numCtxIdx + 1], 10);
+    if (!isNaN(val)) {
+      config.numCtx = val;
     }
   }
 
@@ -126,7 +201,12 @@ function getFileDescription(filePath: string): string {
   }
 }
 
-async function callOllama(messages: Array<{ role: string; content: string }>, numPredict = 1200, timeoutMs = 900000): Promise<string> {
+async function callOllama(
+  messages: Array<{ role: string; content: string }>,
+  numPredict = 1200,
+  timeoutMs = 900000,
+  numCtx = 12288
+): Promise<string> {
   const response = await fetch('http://localhost:11434/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -138,7 +218,7 @@ async function callOllama(messages: Array<{ role: string; content: string }>, nu
       format: 'json', // Forces Ollama to output valid JSON
       options: {
         temperature: 0.1,
-        num_ctx: 16384,
+        num_ctx: numCtx,
         num_predict: numPredict
       },
     }),
@@ -290,7 +370,7 @@ function resolveDependenciesRecursively(
 async function main() {
   console.log('🤖 Starting AI-Assisted Contract Validation (Qwen2.5-Coder 3B)...');
   const config = loadConfig();
-  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}, skipMapping = ${config.skipMapping}, timeoutMs = ${config.timeoutMs}`);
+  console.log(`🔧 Loaded AI config: maxDependencyDepth = ${config.maxDependencyDepth}, exitOnFailure = ${config.exitOnFailure}, skipMapping = ${config.skipMapping}, timeoutMs = ${config.timeoutMs}, numCtx = ${config.numCtx}`);
 
   const schemaPath = path.resolve(__dirname, '../../packages/schema/src/schema.graphql');
   const resolversPath = path.resolve(__dirname, '../../apps/api/src/resolvers/user.ts');
@@ -311,9 +391,14 @@ async function main() {
 
   console.log('🔙 Backend changes detected. Scanning frontend workspace...');
 
-  // 2. Scan frontend directory recursively
+  // 2. Scan frontend directory recursively (excluding boilerplate/layout files)
   const srcDir = path.resolve(__dirname, '../../apps/web/src');
-  const allFiles = getFilesRecursively(srcDir);
+  const rawFiles = getFilesRecursively(srcDir);
+  const excludeBasenames = ['layout.tsx', 'client.ts', 'provider.tsx', 'Header.tsx', 'Notification.tsx', 'styleHelpers.ts'];
+  const allFiles = rawFiles.filter(filePath => {
+    const basename = path.basename(filePath);
+    return !excludeBasenames.includes(basename);
+  });
 
   const descriptionsPath = path.resolve(__dirname, 'file-descriptions.json');
   let descriptions: Record<string, string> = {};
@@ -414,9 +499,18 @@ interface FileMappingReport {
       const mappingResponse = await callOllama([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: mappingPrompt }
-      ], 800);
+      ], 800, config.timeoutMs, config.numCtx);
 
-      const mappingReport = JSON.parse(mappingResponse);
+      let mappingReport: any;
+      try {
+        mappingReport = JSON.parse(mappingResponse);
+      } catch (e: any) {
+        console.error('⚠️ Failed to parse Step 1 Mapping response as JSON:', e.message);
+        console.log('--- Raw Mapping Response ---');
+        console.log(mappingResponse);
+        console.log('---------------------------');
+        throw e;
+      }
       selectedFiles = mappingReport.relevant_files || [];
 
       // Programmatically trace imports recursively for the selected files to find all related business logic/definitions
@@ -448,8 +542,8 @@ interface FileMappingReport {
   for (const item of selectedItems) {
     if (fs.existsSync(item.fullPath)) {
       let code = fs.readFileSync(item.fullPath, 'utf8');
-      // clean imports to save context window
-      code = code.replace(/import\s+type\s+[\s\S]*?from\s+'.*';/g, '');
+      // clean comments, imports, and excessive empty lines to save context window
+      code = cleanCodeForContext(code);
       frontendCodesText += `\n=== File: ${item.relativePath} ===\n${code}\n`;
     }
   }
@@ -499,9 +593,18 @@ interface AuditReport {
     const auditResponse = await callOllama([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: auditPrompt }
-    ], 1200, config.timeoutMs);
+    ], 1200, config.timeoutMs, config.numCtx);
 
-    const report = JSON.parse(auditResponse);
+    let report: any;
+    try {
+      report = JSON.parse(auditResponse);
+    } catch (e: any) {
+      console.error('⚠️ Failed to parse Step 2 Audit response as JSON:', e.message);
+      console.log('--- Raw Audit Response ---');
+      console.log(auditResponse);
+      console.log('--------------------------');
+      throw e;
+    }
 
     console.log('\n==========================================');
     console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');
