@@ -18,7 +18,7 @@ async function main() {
   try {
     const port = parseInt(process.env.PORT || '4000', 10);
     await server.listen({ port, host: '0.0.0.0' });
-    console.log(`API Server listening on port ${port}`);
+    console.log(`API Server listening on port ${port}. Ready to take on requests.`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

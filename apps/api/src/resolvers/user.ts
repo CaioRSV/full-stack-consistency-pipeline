@@ -138,7 +138,7 @@ export const userResolvers: Resolvers = {
         name,
         email,
         website: 'https://example.com/newuser',
-        bio: 'Hello world! I am a new user.',
+        bio: 'I am a new user.',
         createdAt: new Date().toISOString(),
         balance: 100.0,
         tier: UserTier.Bronze,
@@ -175,26 +175,33 @@ export const userResolvers: Resolvers = {
       let limit = 200;
       let feeRate = 0.05;
 
+      const feeRates = {
+        [UserTier.Bronze]: 5 / 10,
+        [UserTier.Silver]: 3 / 10,
+        [UserTier.Gold]: 1 / 10,
+        [UserTier.Platinum]: 0,
+      }
+
       if (sender.tier === UserTier.Silver) {
         limit = 500;
-        feeRate = 0.03;
+        feeRate = feeRates[UserTier.Silver];
       } else if (sender.tier === UserTier.Gold) {
         limit = 1500;
-        feeRate = 0.01;
+        feeRate = feeRates[UserTier.Gold];
       } else if (sender.tier === UserTier.Platinum) {
         limit = Infinity;
-        feeRate = 0.0;
+        feeRate = feeRates[UserTier.Platinum];
       }
 
       if (amount > limit) {
-        throw new Error(`Limite de transferência excedido para o nível ${sender.tier}. Limite individual: $${limit}.`);
+        throw new Error(`Limite de transferência excedido para o nível ${sender.tier}. Limite individual: $${limit}. Revisar valores.`);
       }
 
       const fee = parseFloat((amount * feeRate).toFixed(2));
       const totalCost = amount + fee;
 
       if (sender.balance < totalCost) {
-        throw new Error(`Saldo insuficiente. Valor: $${amount.toFixed(2)} + Taxa: $${fee.toFixed(2)} = $${totalCost.toFixed(2)}. Saldo atual: $${sender.balance.toFixed(2)}.`);
+        throw new Error(`Saldo insuficiente. Valor: $${amount.toFixed(2)} + Taxa: $${fee.toFixed(2)} = $${totalCost.toFixed(2)}. Saldo atual: $${sender.balance.toFixed(2)}. Revisar valores.`);
       }
 
       // Executar a transferência atomicamente
