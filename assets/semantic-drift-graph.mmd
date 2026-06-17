@@ -1,0 +1,68 @@
+graph TD
+    %% Global Styles
+    classDef startEnd fill:#cffcde,stroke:#27ae60,stroke-width:2px,color:#000;
+    classDef process fill:#d6eaf8,stroke:#2980b9,stroke-width:2px,color:#000;
+    classDef condition fill:#fef9e7,stroke:#f39c12,stroke-width:2px,color:#000;
+    classDef io fill:#f5eeec,stroke:#e67e22,stroke-width:2px,color:#000;
+    classDef error fill:#fadbd8,stroke:#c0392b,stroke-width:2px,color:#000;
+
+    %% Node Declarations & Styling
+    Start([🤖 Start: main]):::startEnd
+    LoadConfig[🔧 Load Configurations & CLI Flags <br> config.json / --skip-mapping / --timeout]:::process
+    GetBackendDiff[🔍 Fetch Backend Diffs via Git <br> schema.graphql & user.ts]:::process
+    CheckChanges{Backend changes <br> detected?}:::condition
+    ExitSuccess[✅ Pass: Exit with Code 0 <br> Skip inspection]:::startEnd
+    ScanFrontend[📂 Scan Frontend Directory <br> apps/web/src omitting boilerplate]:::process
+    UpdateCache[📝 Verify / Update File Descriptions <br> file-descriptions.json via LLM]:::process
+    CheckSkipMapping{Is config.skipMapping <br> active?}:::condition
+    SelectAll[📋 Select all catalog files <br> directly]:::process
+    CallOllamaStep1[🤖 Call Ollama: Step 1 Mapping <br> Identify files affected by Diff]:::process
+    ResolveDeps[🔗 Trace Imports Recursively <br> resolveDependenciesRecursively up to maxDepth]:::process
+    FilterCatalog[🎯 Filter Catalog <br> with selected files + dependencies]:::process
+    CheckEmptySelection{No files <br> selected?}:::condition
+    ReadAndClean[🧹 Read & Clean Code Context <br> cleanCodeForContext: strips comments/imports]:::process
+    CallOllamaStep2[🤖 Call Ollama: Step 2 Audit <br> Evaluate inconsistencies based on severity hierarchy]:::process
+    ParseJSON{JSON Report <br> parsed successfully?}:::condition
+    FallbackError[💥 Handle Parse Error <br> Exit based on exitOnFailure]:::error
+    PrintSummary[📝 Print Report Summary <br> Diffs, Thinking Logs & Findings]:::io
+    CheckVerdict{What is the <br> report status?}:::condition
+    ExitFail[🛑 Block Pipeline: Exit with Code 1]:::error
+
+    %% Workflow Connections
+    Start --> LoadConfig
+    LoadConfig --> GetBackendDiff
+    
+    GetBackendDiff --> CheckChanges
+    CheckChanges -- No --> ExitSuccess
+    CheckChanges -- Yes --> ScanFrontend
+    
+    ScanFrontend --> UpdateCache
+    UpdateCache --> CheckSkipMapping
+    
+    %% Skip Mapping Branch
+    CheckSkipMapping -- Yes --> SelectAll
+    
+    %% AI Mapping Branch (Step 1)
+    CheckSkipMapping -- No --> CallOllamaStep1
+    CallOllamaStep1 --> ResolveDeps
+    ResolveDeps --> FilterCatalog
+    
+    %% Merging Branches for Audit (Step 2)
+    SelectAll --> CheckEmptySelection
+    FilterCatalog --> CheckEmptySelection
+    
+    CheckEmptySelection -- Yes --> ExitSuccess
+    CheckEmptySelection -- No --> ReadAndClean
+    
+    ReadAndClean --> CallOllamaStep2
+    CallOllamaStep2 --> ParseJSON
+    
+    ParseJSON -- No --> FallbackError
+    ParseJSON -- Yes --> PrintSummary
+    
+    PrintSummary --> CheckVerdict
+    
+    CheckVerdict -- FAIL --> ExitFail
+    CheckVerdict -- PASS or WARN --> ExitSuccess
+
+    FallbackError --> ExitFail
