@@ -126,16 +126,50 @@ function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
     if (isCI) {
-      try {
-        // Ensure at least depth of 2 is fetched so HEAD~1 is available
-        execSync('git fetch --depth=2', { stdio: 'ignore' });
-      } catch (e) {
-        // Ignore fetch errors
+      const baseRef = process.env.GITHUB_BASE_REF;
+      if (baseRef) {
+        try {
+          execSync(`git fetch origin ${baseRef}`, { stdio: 'ignore' });
+        } catch (e) {}
+        try {
+          return execSync(`git diff origin/${baseRef}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
+        } catch (e) {
+          // Fallback to direct diff if merge-base cannot be computed due to shallow clone limits
+          return execSync(`git diff origin/${baseRef} HEAD -- "${filePath}"`, { encoding: 'utf8' });
+        }
+      } else {
+        // Non-PR CI run (e.g. push event), default to comparing HEAD~1
+        try {
+          execSync('git fetch --depth=2', { stdio: 'ignore' });
+        } catch (e) {}
+        return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
       }
-      return execSync(`git diff HEAD~1 HEAD -- "${filePath}"`, { encoding: 'utf8' });
     }
 
-    // Local: look at the staged changes
+    // Local environment: check if we are on a feature branch compared to main
+    let currentBranch = '';
+    try {
+      currentBranch = execSync('git branch --show-current', { encoding: 'utf8' }).trim();
+    } catch (e) {}
+
+    if (currentBranch && currentBranch !== 'main') {
+      try {
+        const diff = execSync(`git diff main...HEAD -- "${filePath}"`, { encoding: 'utf8' });
+        if (diff.trim()) {
+          return diff;
+        }
+      } catch (e) {
+        try {
+          // Fallback to direct diff if main...HEAD fails (e.g., main not found locally)
+          const diff = execSync(`git diff main HEAD -- "${filePath}"`, { encoding: 'utf8' });
+          if (diff.trim()) {
+            return diff;
+          }
+        } catch (err) {}
+      }
+    }
+
+    // Default local fallback: look at staged changes
     return execSync(`git diff --cached -- "${filePath}"`, { encoding: 'utf8' });
   } catch (e) {
     console.warn(`⚠️ Could not get git diff for ${filePath}`);
