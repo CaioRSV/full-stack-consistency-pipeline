@@ -126,7 +126,16 @@ function getGitDiff(filePath: string): string {
   try {
     const isCI = process.env.GITHUB_ACTIONS === 'true';
     if (isCI) {
-      const baseRef = process.env.GITHUB_BASE_REF;
+      let baseRef = process.env.GITHUB_BASE_REF;
+      if (!baseRef) {
+        // If not a PR, check if we are on a feature branch triggering a push event
+        const currentBranch = process.env.GITHUB_REF_NAME;
+        if (currentBranch && currentBranch !== 'main' && currentBranch !== 'master') {
+          // Default target/origin branch for feature branch push events is 'main' (or master)
+          baseRef = 'main';
+        }
+      }
+
       if (baseRef) {
         try {
           execSync(`git fetch origin ${baseRef}`, { stdio: 'ignore' });
@@ -138,7 +147,7 @@ function getGitDiff(filePath: string): string {
           return execSync(`git diff origin/${baseRef} HEAD -- "${filePath}"`, { encoding: 'utf8' });
         }
       } else {
-        // Non-PR CI run (e.g. push event), default to comparing HEAD~1
+        // Non-PR CI run on main/master (e.g. push event), default to comparing HEAD~1
         try {
           execSync('git fetch --depth=2', { stdio: 'ignore' });
         } catch (e) {}
@@ -146,22 +155,29 @@ function getGitDiff(filePath: string): string {
       }
     }
 
-    // Local environment: check if we are on a feature branch compared to main
+    // Local environment: check if we are on a feature branch compared to main or master
     let currentBranch = '';
     try {
       currentBranch = execSync('git branch --show-current', { encoding: 'utf8' }).trim();
     } catch (e) {}
 
-    if (currentBranch && currentBranch !== 'main') {
+    if (currentBranch && currentBranch !== 'main' && currentBranch !== 'master') {
+      let baseBranch = 'main';
       try {
-        const diff = execSync(`git diff main...HEAD -- "${filePath}"`, { encoding: 'utf8' });
+        execSync('git show-ref --verify refs/heads/main', { stdio: 'ignore' });
+      } catch (e) {
+        baseBranch = 'master';
+      }
+
+      try {
+        const diff = execSync(`git diff ${baseBranch}...HEAD -- "${filePath}"`, { encoding: 'utf8' });
         if (diff.trim()) {
           return diff;
         }
       } catch (e) {
         try {
-          // Fallback to direct diff if main...HEAD fails (e.g., main not found locally)
-          const diff = execSync(`git diff main HEAD -- "${filePath}"`, { encoding: 'utf8' });
+          // Fallback to direct diff if base...HEAD fails
+          const diff = execSync(`git diff ${baseBranch} HEAD -- "${filePath}"`, { encoding: 'utf8' });
           if (diff.trim()) {
             return diff;
           }
