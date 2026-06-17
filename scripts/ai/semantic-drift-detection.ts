@@ -49,7 +49,7 @@ function cleanCodeForContext(code: string): string {
     if (trimmed.startsWith('import ')) {
       // Check if it's single line
       const isSingleLine = (trimmed.includes('from ') && (trimmed.endsWith("';") || trimmed.endsWith('";') || trimmed.endsWith("'") || trimmed.endsWith('"'))) ||
-                           (trimmed.startsWith('import \'') || trimmed.startsWith('import "'));
+        (trimmed.startsWith('import \'') || trimmed.startsWith('import "'));
       if (!isSingleLine) {
         inMultiLineImport = true;
       }
@@ -594,13 +594,16 @@ You are an extremely strict AI code reviewer and GraphQL consistency auditor.
 Your job is to catch SEMANTIC DRIFT, BUSINESS LOGIC MISMATCHES, and FUNCTIONALITY BREAKS between the backend and frontend.
 
 CRITICAL INSTRUCTIONS:
-1. Look at the API Resolvers DIFF and Schema DIFF. Identify ANY changes in types, formats, values, constants, equations, thresholds, error conditions, or business rules (such as transaction fees, credit limits, or loyalty tier thresholds).
-2. Look for subtle mathematical, syntax, or sign anomalies/typos in the backend changes (such as unexpected negative signs, e.g. "feePercentage: - feePercentagesDict[UserTier.Bronze]", division errors, or operator typos) that would make the configuration values semantically incorrect.
-3. Compare these changes against the selected Frontend Code files. Do not just fail blindly because the frontend has hardcoded values. Instead, check the underlying logic:
-   - Identify if the frontend could align if it fetched the configurations dynamically.
-   - If the backend configuration itself contains a semantic/mathematical error (like negative fee percentages due to a leading minus sign typo), this is the REAL error/mismatch that must be highlighted in the report, since it would propagate incorrect values to the frontend if implemented dynamically.
-4. If there is ANY discrepancy, typo, sign mismatch, or logical inconsistency between the backend calculations/configs and what the frontend calculates or displays, you MUST output status: "FAIL" and detail the exact mathematical/semantic anomaly.
-5. If the frontend lacks mitigating logic to handle the updated backend rules/formats, or has conflicting logic, you MUST output status: "FAIL". Do NOT assume the frontend handles changes automatically.
+1. Look at the API Resolvers DIFF and Schema DIFF. Identify ANY changes in types, formats, values, constants, equations, thresholds, error conditions, or business rules.
+2. Audit the backend changes against the frontend code files using the following strict SEVERITY HIERARCHY:
+   - LEVEL 1: CRITICAL BUGS & ERRORS (Audit MUST return status: "FAIL" and report these immediately):
+     * Math, scale, or division errors: Any decimal scaling mismatches, unit representation differences (e.g., decimals vs percentages), incorrect formula updates, or wrong arithmetic coefficients. Always evaluate fractions or divisions in the diff to their final decimal values (e.g. "X / 10" evaluates to "X * 0.1"). When comparing to frontend percentages, remember that a percentage of "P%" equals "P / 100" (e.g. 5% is 0.05, NOT 0.5). Verify that the backend rate and the frontend percentage are numerically equal when converted to the same scale. A mismatch in scale (e.g., 0.5 vs 0.05) is a critical level 1 bug/typo.
+     * API contract or spelling bugs: GraphQL type mismatches, misspelled field/resolver properties, missing required parameters, or syntax bugs in resolvers.
+     * Severe logical bugs: Swapped operators, wrong signs, or incorrect logic rules.
+   - LEVEL 2: ARCHITECTURAL WARNINGS (Do NOT fail the audit for these; categorize as status: "PASS" or "WARN"):
+     * Refactoring or code structure differences where the business values are correct but parameterized differently.
+     * Concerns about the frontend using hardcoded values instead of query-based dynamic configurations.
+3. If a LEVEL 1 CRITICAL bug/error exists, prioritize calling it out as the primary reason for a FAIL verdict. Do not let Level 2 architectural suggestions overshadow actual arithmetic, spelling, or logic bugs.
 
 === 1. GraphQL Schema DIFF ===
 ${schemaDiff || '(No changes)'}
@@ -613,7 +616,7 @@ ${frontendCodesText || '(No files selected)'}
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
-  thinking: string; // Step-by-step description of your analysis, comparing backend resolver changes/constants/rules with frontend code usage/constants/formulas.
+  thinking: string; // Step-by-step description of your analysis: (1) First, identify any math expressions/fractions in the diff and compute their exact values (e.g. evaluate "N / 10" to get decimal values). (2) Second, convert frontend percentages (like "P%") to decimals ("P / 100", e.g. 5% is 0.05). (3) Third, compare their numerical equality and check for 10x or 100x scale/decimal mismatches.
   status: "PASS" | "WARN" | "FAIL";
   backend_changes_summary: string;
   findings: Array<{
