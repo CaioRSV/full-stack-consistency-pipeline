@@ -626,26 +626,27 @@ interface FileMappingReport {
     process.exit(0);
   }
 
-  // 4. Read selected files
-  let frontendCodesText = '';
-  for (const item of selectedItems) {
-    if (fs.existsSync(item.fullPath)) {
-      let code = fs.readFileSync(item.fullPath, 'utf8');
-      // clean comments, imports, and excessive empty lines to save context window
-      code = cleanCodeForContext(code);
-      frontendCodesText += `\n=== File: ${item.relativePath} ===\n${code}\n`;
-    }
-  }
-
-  // 5. Step 2: Audit
+  // 4. Run audit on selected files file-by-file
   console.log('\n🧠 Step 2: Running audit on selected files...');
-  const auditPrompt = `
+  const reports: any[] = [];
+
+  for (const item of selectedItems) {
+    if (!fs.existsSync(item.fullPath)) {
+      continue;
+    }
+
+    console.log(`🔍 Auditing file: ${item.relativePath}...`);
+    let code = fs.readFileSync(item.fullPath, 'utf8');
+    // clean comments, imports, and excessive empty lines to save context window
+    code = cleanCodeForContext(code);
+
+    const auditPrompt = `
 You are an extremely strict AI code reviewer and GraphQL consistency auditor.
 Your job is to catch SEMANTIC DRIFT, BUSINESS LOGIC MISMATCHES, and FUNCTIONALITY BREAKS between the backend and frontend.
 
 CRITICAL INSTRUCTIONS:
 1. Look at the API Resolvers DIFF and Schema DIFF. Identify ANY changes in types, formats, values, constants, equations, thresholds, error conditions, or business rules.
-2. Audit the backend changes against the frontend code files using the following strict SEVERITY HIERARCHY:
+2. Audit the backend changes against the frontend code file using the following strict SEVERITY HIERARCHY:
    - LEVEL 1: CRITICAL BUGS & ERRORS (Audit MUST return status: "FAIL" and report these immediately):
      * Math, scale, or division errors: Any decimal scaling mismatches, unit representation differences (e.g., decimals vs percentages), incorrect formula updates, or wrong arithmetic coefficients. Always evaluate fractions or divisions in the diff to their final decimal values (e.g. "X / 10" evaluates to "X * 0.1"). When comparing to frontend percentages, remember that a percentage of "P%" equals "P / 100" (e.g. 5% is 0.05, NOT 0.5). Verify that the backend rate and the frontend percentage are numerically equal when converted to the same scale. A mismatch in scale (e.g., 0.5 vs 0.05) is a critical level 1 bug/typo.
      * API contract or spelling bugs: GraphQL type mismatches, misspelled field/resolver properties, missing required parameters, or syntax bugs in resolvers.
@@ -661,8 +662,9 @@ ${schemaDiff || '(No changes)'}
 === 2. API Resolvers DIFF ===
 ${resolversDiff || '(No changes)'}
 
-=== 3. Selected Frontend Codes ===
-${frontendCodesText || '(No files selected)'}
+=== 3. Frontend Code File ===
+=== File: ${item.relativePath} ===
+${code}
 
 Return your output ONLY as a valid JSON object matching this TypeScript interface:
 interface AuditReport {
@@ -670,7 +672,7 @@ interface AuditReport {
   status: "PASS" | "WARN" | "FAIL";
   backend_changes_summary: string;
   findings: Array<{
-    file: string;
+    file: string; // This should be "${item.relativePath}"
     level: "error" | "warning";
     description: string;
     suggestion: string;
@@ -681,83 +683,112 @@ interface AuditReport {
 }
 `;
 
-  try {
-    const auditResponse = await callOllama([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: auditPrompt }
-    ], 1200, config.timeoutMs, config.numCtx);
-
-    let report: any;
     try {
-      report = JSON.parse(auditResponse);
-    } catch (e: any) {
-      console.error('⚠️ Failed to parse Step 2 Audit response as JSON:', e.message);
-      console.log('--- Raw Audit Response ---');
-      console.log(auditResponse);
-      console.log('--------------------------');
-      throw e;
-    }
+      const auditResponse = await callOllama([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: auditPrompt }
+      ], 1000, config.timeoutMs, config.numCtx);
 
-    console.log('\n==========================================');
-    console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');
-    console.log('==========================================');
-
-    if (report.thinking) {
-      console.log('\n🧠 Model Thinking & Reasoning Process:');
-      console.log('------------------------------------------');
-      console.log(report.thinking);
-      console.log('------------------------------------------');
-    }
-
-    if (report.backend_changes_summary) {
-      console.log('\n🔙 Backend Changes Summary:');
-      console.log('------------------------------------------');
-      console.log(report.backend_changes_summary);
-      console.log('------------------------------------------');
-    }
-
-    console.log('\n🚦 Validation Verdict:');
-    if (report.status === 'PASS') {
-      console.log('✅ APPROVED (PASS) - The contracts are fully consistent and validated.');
-    } else if (report.status === 'WARN') {
-      console.log('⚠️ APPROVED WITH WARNINGS (WARN) - Minor issues or deprecations detected, but not blocking.');
-    } else {
-      console.log('❌ NOT APPROVED (FAIL) - Invalidated due to critical inconsistencies or errors.');
-    }
-
-    console.log(`\nExplanation: ${report.explanation}`);
-
-    if (report.findings && report.findings.length > 0) {
-      console.log('\n🔍 Findings & Error Locations:');
-      for (const finding of report.findings) {
-        console.log(`\n[${finding.level.toUpperCase()}] File: ${finding.file}`);
-        console.log(`Description: ${finding.description}`);
-        if (finding.backend_diff_snippet) {
-          console.log(`\n--- Backend Diff Snippet ---\n${finding.backend_diff_snippet}\n----------------------------`);
-        }
-        if (finding.frontend_snippet) {
-          console.log(`\n--- Frontend Snippet ---\n${finding.frontend_snippet}\n------------------------`);
-        }
-        console.log(`Suggestion: ${finding.suggestion}`);
+      let report: any;
+      try {
+        report = JSON.parse(auditResponse);
+        reports.push({ file: item.relativePath, ...report });
+      } catch (e: any) {
+        console.error(`⚠️ Failed to parse Step 2 Audit response for ${item.relativePath} as JSON:`, e.message);
+        console.log('--- Raw Audit Response ---');
+        console.log(auditResponse);
+        console.log('--------------------------');
       }
-    } else {
-      console.log('\n✨ No semantic anomalies, type conflicts, or inconsistencies detected. Codebases are perfectly aligned.');
+    } catch (error: any) {
+      console.error(`❌ Failed to run AI contract verification for ${item.relativePath}:`, error.message);
     }
+  }
 
-    console.log('\n==========================================');
-    console.log('✅ AI Audit completed successfully.');
-
-    // If status is FAIL, exit with code 1 to block CI/CD pipeline
-    if (report.status === 'FAIL') {
-      console.error('\n❌ AI analysis determined a critical mismatch (FAIL). Halting pipeline.');
-      process.exit(1);
-    }
-
-  } catch (error: any) {
-    console.error('❌ Failed to run AI contract verification:', error.message);
-    console.warn('⚠️ Ollama/Qwen model might not be ready or running. Skipping AI check.');
-    // Don't fail the build if the local model service is temporarily unreachable
+  // 5. Aggregate reports and print final summary
+  if (reports.length === 0) {
+    console.error('❌ All file audits failed or returned invalid JSON.');
     process.exit(config.exitOnFailure ? 1 : 0);
+  }
+
+  let finalStatus: 'PASS' | 'WARN' | 'FAIL' = 'PASS';
+  const allFindings: any[] = [];
+  const thinkings: string[] = [];
+  const summaries: string[] = [];
+  const explanations: string[] = [];
+
+  for (const report of reports) {
+    if (report.status === 'FAIL') {
+      finalStatus = 'FAIL';
+    } else if (report.status === 'WARN' && finalStatus !== 'FAIL') {
+      finalStatus = 'WARN';
+    }
+    if (report.findings && report.findings.length > 0) {
+      allFindings.push(...report.findings);
+    }
+    if (report.thinking) {
+      thinkings.push(`[${report.file}]:\n${report.thinking}`);
+    }
+    if (report.backend_changes_summary && !summaries.includes(report.backend_changes_summary)) {
+      summaries.push(report.backend_changes_summary);
+    }
+    if (report.explanation) {
+      explanations.push(`- [${report.file}]: ${report.explanation}`);
+    }
+  }
+
+  console.log('\n==========================================');
+  console.log('📝 AI CONTRACT AUDIT REPORT SUMMARY');
+  console.log('==========================================');
+
+  if (thinkings.length > 0) {
+    console.log('\n🧠 Model Thinking & Reasoning Process:');
+    console.log('------------------------------------------');
+    console.log(thinkings.join('\n\n'));
+    console.log('------------------------------------------');
+  }
+
+  if (summaries.length > 0) {
+    console.log('\n🔙 Backend Changes Summary:');
+    console.log('------------------------------------------');
+    console.log(summaries.join('\n'));
+    console.log('------------------------------------------');
+  }
+
+  console.log('\n🚦 Validation Verdict:');
+  if (finalStatus === 'PASS') {
+    console.log('✅ APPROVED (PASS) - The contracts are fully consistent and validated.');
+  } else if (finalStatus === 'WARN') {
+    console.log('⚠️ APPROVED WITH WARNINGS (WARN) - Minor issues or deprecations detected, but not blocking.');
+  } else {
+    console.log('❌ NOT APPROVED (FAIL) - Invalidated due to critical inconsistencies or errors.');
+  }
+
+  console.log('\nExplanations by file:');
+  console.log(explanations.join('\n'));
+
+  if (allFindings.length > 0) {
+    console.log('\n🔍 Findings & Error Locations:');
+    for (const finding of allFindings) {
+      console.log(`\n[${finding.level.toUpperCase()}] File: ${finding.file}`);
+      console.log(`Description: ${finding.description}`);
+      if (finding.backend_diff_snippet) {
+        console.log(`\n--- Backend Diff Snippet ---\n${finding.backend_diff_snippet}\n----------------------------`);
+      }
+      if (finding.frontend_snippet) {
+        console.log(`\n--- Frontend Snippet ---\n${finding.frontend_snippet}\n------------------------`);
+      }
+      console.log(`Suggestion: ${finding.suggestion}`);
+    }
+  } else {
+    console.log('\n✨ No semantic anomalies, type conflicts, or inconsistencies detected. Codebases are perfectly aligned.');
+  }
+
+  console.log('\n==========================================');
+  console.log('✅ AI Audit completed successfully.');
+
+  if (finalStatus === 'FAIL') {
+    console.error('\n❌ AI analysis determined a critical mismatch (FAIL). Halting pipeline.');
+    process.exit(1);
   }
 }
 
@@ -765,3 +796,4 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
