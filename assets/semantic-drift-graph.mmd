@@ -7,7 +7,7 @@ graph TD
     classDef error fill:#fadbd8,stroke:#c0392b,stroke-width:2px,color:#000;
 
     %% Node Declarations & Styling
-    Start([🤖 Start: main]):::startEnd
+    Start([Start: main]):::startEnd
     LoadConfig[Load Configurations & CLI Flags]:::process
     GetBackendDiff[Fetch Backend Diffs via Git - Varies by environment ]:::process
     CheckChanges{Backend changes <br> detected?}:::condition
