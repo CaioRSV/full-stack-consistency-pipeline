@@ -171,20 +171,23 @@ export function useLedger() {
   const activeReceiver = listData?.users?.find((u: User) => u.id === receiverId);
 
   // Live rules preview based on sender's tier
-  let feePercentage = 5;
-  let transferLimit = 200;
-  if (activeSender) {
-    if (activeSender.tier === 'SILVER') {
-      feePercentage = 3;
-      transferLimit = 500;
-    } else if (activeSender.tier === 'GOLD') {
-      feePercentage = 1;
-      transferLimit = 1500;
-    } else if (activeSender.tier === 'PLATINUM') {
-      feePercentage = 0;
-      transferLimit = Infinity;
-    }
-  }
+  const feeRates: Record<string, number> = {
+    BRONZE: (5 / 10) * 100,
+    SILVER: (3 / 10) * 100,
+    GOLD: (1 / 10) * 100,
+    PLATINUM: 0,
+  };
+
+  const transferLimits: Record<string, number> = {
+    BRONZE: 200,
+    SILVER: 500,
+    GOLD: 1500,
+    PLATINUM: Infinity,
+  };
+
+  const tier = activeSender?.tier || 'BRONZE';
+  const feePercentage = feeRates[tier];
+  const transferLimit = transferLimits[tier];
 
   const enteredAmount = parseFloat(transferAmount) || 0;
   const computedFee = parseFloat((enteredAmount * (feePercentage / 100)).toFixed(2));
